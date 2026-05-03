@@ -71,32 +71,144 @@ Options: `--port 9000`, `--dir /opt/nxcitadel`, `--user nxcitadel`
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Nx-Citadel                           │
-│                                                         │
-│  ┌───────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ FastAPI    │  │ APScheduler  │  │  LLM (Claude)    │  │
-│  │ + Auth     │  │ (cron /      │  │  Anthropic API   │  │
-│  │ + UI shell │  │  interval)   │  │                  │  │
-│  └─────┬─────┘  └──────┬───────┘  └────────┬─────────┘  │
-│        │               │                    │            │
-│        ▼               ▼                    ▼            │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Services Layer                       │   │
-│  │  search_service.py  → DuckDuckGo / Brave / SerpAPI│   │
-│  │  ai_service.py      → LLM summarization           │   │
-│  │  output_service.py  → email / slack / sms / discord│  │
-│  │  ioc_collector.py   → threat feed ingestion        │   │
-│  │  scheduler_service.py → job orchestration          │   │
-│  └──────────────────────────┬───────────────────────┘   │
-│                             │                           │
-│                             ▼                           │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │  Markdown Store (data/*.md + YAML frontmatter)   │   │
-│  │  interests/  resources/  reports/  iocs/  etc.   │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          CLIENT (Browser)                                  │
+│          ┌─────────────────────────────────────────────────────────┐        │
+│          │  SPA (index.html + app.js + main.css)                    │        │
+│          │  • Tabbed navigation (Dashboard / Interests / Resources  │        │
+│          │    / Summary Reports / IOCs / Settings / Admin / Logs)   │        │
+│          │  • Axios → /api/*  • Auth via session cookies            │        │
+│          │  • Theme toggle (dark/light, localStorage)               │        │
+│          │  • SSE tail (admin self-update stream)                   │        │
+│          └─────────────────────────────────────────────────────────┘        │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │ HTTPS (behind reverse proxy)
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     NX-CITADEL APPLICATION SERVER                           │
+│                  FastAPI + uvicorn :8000  (0.0.0.0)                        │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    Lifespan (startup/shutdown)                      │    │
+│  │  • setup_logging()     • _seed_admin()     • APScheduler start     │    │
+│  │  • IOC maintenance cron (02:00 UTC)  • IOC collection cron (03:00) │    │
+│  │  • Per-interest / per-resource / per-summary schedule reload        │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ auth     │  │interests │  │resources │  │summary   │  │ iocs     │   │
+│  │_router   │  │ (router) │  │ (router) │  │_reports  │  │ (router) │   │
+│  │          │  │          │  │          │  │ (router) │  │          │   │
+│  │ /login   │  │ CRUD     │  │ CRUD     │  │ CRUD     │  │ CRUD     │   │
+│  │ /api/    │  │ run      │  │ run      │  │ run      │  │ bulk CSV │   │
+│  │ auth/*   │  │ reports  │  │ reports  │  │ reports  │  │ config   │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│                                                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ users    │  │ settings │  │  logs    │  │ admin    │  │ioc_config │   │
+│  │ (router) │  │ (router) │  │ (router) │  │ (router) │  │ (router) │   │
+│  │          │  │          │  │          │  │          │  │          │   │
+│  │ CRUD     │  │ CRUD     │  │ tail     │  │ backup   │  │ source   │   │
+│  │ MFA reset│  │ test LLM │  │ archive  │  │ restore  │  │ sync     │   │
+│  │          │  │ test SMS │  │          │  │ build-pkg│  │ status   │   │
+│  │          │  │ test email│  │          │  │ reset    │  │          │   │
+│  │          │  │ test disc│  │          │  │          │  │          │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                      Auth Middleware (main.py)                      │    │
+│  │  • Session cookie validation (12h TTL)  • bcrypt password check     │    │
+│  │  • TOTP MFA enforcement (manager/admin)  • bypass /login, /static   │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+         │                    │                     │
+         ▼                    ▼                     ▼
+┌─────────────────┐ ┌────────────────┐ ┌─────────────────────────────────┐
+│     SERVICES     │ │     SERVICES     │ │       SERVICES                │
+├───────────────┤ ├───────────────┤ ├──────────────────────────────┤
+│ ai_service      │ │ search_service  │ │ scheduler_service             │
+│                 │ │                 │ │                               │
+│ • summarize_    │ │ • search_multi  │ │ • run_interest()              │
+│   results()     │ │ • search_web()  │ │ • run_resource()              │
+│ • summarize_    │ │ • search_trusted│ │ • run_summary_report()        │
+│   resource()    │ │   _resource()   │ │ • _build_trigger()            │
+│                 │ │ (DDG/Brave/Serp)│ │ • reload_all_schedules()      │
+│ SYSTEM_PROMPT:  │ │                 │ │                               │
+│ "use only       │ │ OUTPUT CHANNELS:│ │ ioc_collector                 │
+│  provided       │ │ deliver_outputs │ │                               │
+│  results, cite  │ │ • email (aiosmtp)│ │ • Feodo Tracker              │
+│  every claim"   │ │ • slack webhook │ │ • URLhaus                     │
+└───────┬────────┘ │ • sms (Twilio)  │ │ • MalwareBazaar               │
+         │         │ • discord wh    │ │ • OpenPhish                    │
+         │         └────────┬────────┘ └────────────────┬────────────┘
+         │                  │                          │
+         ▼                  ▼                          ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            OUTPUT LAYER                                   │
+│                                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ output_service / summary_service                                       │  │
+│  │                                                                        │  │
+│  │ deliver_outputs():                                                     │  │
+│  │   1. save report (.md → data/reports/<id>/)                           │  │
+│  │   2. deliver to channels (email/slack/sms/discord)                    │  │
+│  │   3. enrich with recent resource reports (data/resource_reports/)      │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ logger_service                                                         │  │
+│  │ • setup_logging() → logs/citadel.log (daily rotation)                 │  │
+│  │ • log_user_action()                                                   │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            STORAGE LAYER                                      │
+│                    (markdown files with YAML frontmatter — no DB)            │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                │
+│  markdown_store.py           ──→  Generic CRUD for .md + frontmatter          │
+│  ioc_store.py                ──→  IOC-specific + dedup + maintenance          │
+│  user_store.py               ──→  User CRUD                                   │
+│                                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐      │
+│  │ data/interests/       ──→  <uuid>.md (watch topic defs)             │      │
+│  │ data/reports/<id>/    ──→  <timestamp>.md (generated reports)       │      │
+│  │ data/resources/       ──→  <uuid>.md (trusted resource monitors)    │      │
+│  │ data/resource_reports/<id>/ ──→ <timestamp>.md (resource reports)   │      │
+│  │ data/summary_reports/<id>/  ──→ defs + generated reports            │      │
+│  │ data/iocs/            ──→  ips.md, domains.md, urls.md, hashes.md   │      │
+│  │ data/users/           ──→  User accounts (bcrypt)                   │      │
+│  │ data/config/          ──→  settings.yaml, ioc_sources.yaml,         │      │
+│  │                           ioc_sync_status.yaml                      │      │
+│  │ logs/                 ──→  citadel.log + daily archives (.gz)       │      │
+│  └─────────────────────────────────────────────────────────────────────┘      │
+└────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            EXTERNAL INTEGRATIONS                              │
+├─────────────────────┬──────────────┬──────────────┬─────────────────┬────────────┤
+│  Anthropic   │  DuckDuckGo  │  aiosmtplib  │  Twilio      │  Discord        │
+│  Claude API  │  Brave API   │  (email)     │  (SMS)       │  webhook        │
+│              │  SerpAPI     │              │              │                 │
+│  • AI summarization            │              │              │                 │
+│  • SYSTEM_PROMPT               │              │              │                 │
+│    enforcement                 │              │              │                 │
+└───────────────┴──────────────┴──────────────┴──────────────┴───────────────┘
 ```
+
+**Key data flows:**
+
+1. **Interest run pipeline**: `scheduler_service.run_interest()` → `search_service.search_multi()` (DDG/Brave/SerpAPI) → `ai_service.summarize_results()` (Anthropic Claude) → `output_service.deliver_outputs()` → save report + optional delivery channels (email/slack/sms/discord). Summary is enriched with recent trusted resource reports from `data/resource_reports/`.
+
+2. **Resource monitor pipeline**: `run_resource()` → render prompt with `[SOURCE]` substitution → `search_multi()` → `summarize_resource()` → `deliver_resource_outputs()` → save to `data/resource_reports/<id>/`.
+
+3. **Executive summary pipeline**: `run_summary_report()` → collects all interest reports → LLM synthesis → delivery via configured channels.
+
+4. **IOC pipeline**: Scheduled collection (03:00 UTC daily) pulls from Feodo Tracker, URLhaus, MalwareBazaar, OpenPhish → `ioc_store` with dedup → daily maintenance (02:00 UTC) prunes expired/low-priority entries.
+
+5. **Auth flow**: Session cookies (12h TTL) → bcrypt password + TOTP MFA (enforced for manager/admin) → middleware in `main.py` protects all `/api/*` except auth paths.
 
 ### Directory structure
 
