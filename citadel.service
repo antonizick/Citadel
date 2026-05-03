@@ -1,0 +1,16 @@
+[Unit]
+Description=Nx-Citadel Intelligence Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=nick
+WorkingDirectory=/home/nick/nxcitadel
+ExecStart=/home/nick/nxcitadel/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

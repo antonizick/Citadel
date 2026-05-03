@@ -1,0 +1,335 @@
+# ═══════════════════════════════════════════════════════════════════
+# Nx-Citadel — .gitignore
+# Covers: Python/FastAPI best practices, AI-assistant configs,
+# IDEs, OS artifacts, build outputs, and runtime data.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── AI Assistant Directories & Files ─────────────────────────────
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# OpenCode
+opencode.json
+.openclaw/
+.openclaw/
+
+# Cursor
+.cursor/
+.cursorrules
+.cursorrules.local
+
+# GitHub Copilot
+.github/copilot-instructions.md
+
+# Devin
+.devin/
+
+# Cline
+.cline/
+
+# Roo Code
+.roo/
+
+# ── Python / Virtual Environments ────────────────────────────────
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env.bak/
+
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyc
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+
+# Pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Installer logs
+pip-install.log
+pip-install-debug.log
+
+# Pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+poetry.toml
+*.lock
+
+# uv
+uv.lock
+.python-version
+
+# Pyright / mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyrightcache/
+.pytype/
+
+# Coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Translations
+*.mo
+
+# Sphinx documentation
+docs/_build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ruff
+.ruff_cache/
+
+# pyenv
+.python-version
+
+# Scrapy
+.scrapy
+
+# cython debugging
+*.c
+*.pyx
+*.pxd
+*.pxi
+
+# ── Runtime & User Data (Nx-Citadel specific) ────────────────────
+
+# All user data — interests, reports, IOCs, config, users
+data/
+
+# Live log file (archives may be backed up separately)
+logs/
+*.log
+
+# PID file from StartCitadel.sh
+.citadel.pid
+
+# Deployment artifacts
+deploy/archived/
+deploy/nxcitadel-*.tar.gz
+deploy/nxcitadel-latest.tar.gz
+
+# Build / download scripts (deploy/install.sh and deploy/build_package.sh stay tracked)
+deploy/get.sh.bak
+
+# ── Secrets & Credentials ────────────────────────────────────────
+
+.env
+.env.local
+.env.production
+.env.*.local
+.env.*.production
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+*.credentials.json
+service-account*.json
+
+# ── IDE & Editor Files ───────────────────────────────────────────
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains / PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim
+*.swp
+*.swo
+*~
+.session
+Session.vim
+netrwNetrc
+.viminfo
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+projectile.cache
+flycheck-cache.el
+.dir-locals.el
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+*.sublime-settings
+
+# Nova
+.nova/
+
+# Fleet
+.fleet/
+
+# Zed
+.zed/
+
+# Helix
+.helix/
+
+# Kakoune
+.kak/
+
+# Micro
+.config/micro/
+
+# Eclipse
+.pydevproject
+.metadata
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Glade
+*.glade
+
+# Nuitka
+*.build/
+*.dist/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ── OS & File-System Artifacts ───────────────────────────────────
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+$RECYCLE.BIN/
+desktop.ini
+
+# Linux
+*~
+.fuse_hidden*
+.Trash-*
+.nfs*
+
+# ── Node (tooling only — .js/.css are tracked) ───────────────────
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ── Docker ───────────────────────────────────────────────────────
+
+.docker/
+docker-compose.override.yml
+
+# ── Git ──────────────────────────────────────────────────────────
+
+# Ignore accidental nested repos
+.git/
+
+# Git hooks (if managed locally)
+.hooks/
+
+# ── Temporary & Scratch Files ────────────────────────────────────
+
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*.cache
+*.log
+*.pid
+
+# tmp dirs
+tmp/
+temp/
+
+# Jupyter / notebook outputs
+.ipynb_checkpoints/
+
+# ── Archives (local copies — not deployment packages) ────────────
+
+*.zip
+*.tar
+*.gz
+!deploy/*.tar.gz
+
+# ── Misc ─────────────────────────────────────────────────────────
+
+# Large files
+*.iso
+*.dmg
+*.qcow2
+*.vmdk
+*.ova
+*.vdi
+
+# Database files (project is DB-free, but prevent accidental additions)
+*.sqlite
+*.sqlite3
+*.db

@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nx-Citadel</title>
+  <script>if(localStorage.getItem('citadel-theme')==='light')document.documentElement.classList.add('light-theme');</script>
+  <link rel="icon" type="image/jpeg" href="/static/img/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css?v={{ v }}">
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<nav id="sidebar">
+  <div class="sidebar-logo">
+    <img src="/static/img/logo.jpg" alt="Nx-Citadel logo" class="sidebar-logo-img" width="40" height="40" style="width:40px;height:40px;min-width:40px;object-fit:cover;object-position:center 30%;border-radius:50%;flex-shrink:0;">
+    <div class="sidebar-logo-text">
+      <h1>Nx-Citadel</h1>
+      <small>Intelligence Monitor</small>
+      {% if app_version %}<span class="sidebar-version">v{{ app_version }}</span>{% endif %}
+    </div>
+  </div>
+
+  <!-- Scrollable nav area -->
+  <div class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-label">Overview</div>
+      <div class="nav-item active" data-page="dashboard">
+        <span class="nav-icon">⬡</span> Dashboard
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Monitor</div>
+      <div class="nav-item" data-page="interests">
+        <span class="nav-icon">🎯</span> Interests
+      </div>
+      <div class="nav-item" data-page="resources">
+        <span class="nav-icon">🔒</span> Trusted Resources
+      </div>
+      <div class="nav-item" data-page="summary-reports">
+        <span class="nav-icon">📊</span> Summary Reports
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">IOCs</div>
+      <div class="nav-item" data-page="ioc-ips">
+        <span class="nav-icon">🌐</span> IP Addresses
+      </div>
+      <div class="nav-item" data-page="ioc-hashes">
+        <span class="nav-icon">#</span> Hashes
+      </div>
+      <div class="nav-item" data-page="ioc-urls">
+        <span class="nav-icon">🔗</span> URLs
+      </div>
+      <div class="nav-item" data-page="ioc-domains">
+        <span class="nav-icon">🌍</span> Domains
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">System</div>
+      <div class="nav-item" data-page="settings" data-role-min="manager">
+        <span class="nav-icon">⚙</span> Settings
+      </div>
+      <div class="nav-item" data-page="ioc-config" data-role-min="admin">
+        <span class="nav-icon">🔑</span> IOC Configuration
+      </div>
+      <div class="nav-item" data-page="logs" data-role-min="manager">
+        <span class="nav-icon">📋</span> Logs
+      </div>
+      <div class="nav-item" data-page="admin" data-role-min="manager">
+        <span class="nav-icon">🛡</span> Admin
+      </div>
+    </div>
+
+    <div class="nav-section admin-only">
+      <div class="nav-label">Users</div>
+      <div class="nav-item" data-page="users">
+        <span class="nav-icon">👥</span> User Management
+      </div>
+    </div>
+  </div>
+
+  <!-- Pinned bottom: user info + sign out -->
+  <div class="sidebar-bottom">
+    <div class="sidebar-user" onclick="openProfileModal()" title="Profile & MFA settings">
+      <div class="sidebar-user-avatar" id="user-avatar">N</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="user-display-name">Loading…</div>
+        <div class="sidebar-user-role" id="user-display-role">—</div>
+      </div>
+      <span style="color:var(--citadel-muted);font-size:0.85rem">⚙</span>
+    </div>
+    <div class="sidebar-signout">
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="doLogout()">
+          ⏻ Sign Out
+        </button>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme" style="padding:5px 9px;font-size:15px;flex-shrink:0;line-height:1">☀</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<main id="main">
+
+  <!-- MFA setup required banner (shown to managers/admins without MFA) -->
+  <div id="mfa-setup-banner" class="hidden" style="background:#7c3a0a;border-bottom:1px solid #c2620f;padding:10px 24px;display:flex;align-items:center;gap:12px;font-size:0.9rem">
+    <span style="font-size:1.2rem">⚠</span>
+    <span><strong>MFA is required for your account.</strong> Set it up now to secure your access — go to your profile (click your name in the sidebar).</span>
+    <button class="btn btn-sm" style="margin-left:auto;background:#c2620f;border:none;color:#fff;cursor:pointer" onclick="openProfileModal('mfa')">Set Up MFA →</button>
+  </div>
+
+  <!-- ===== DASHBOARD ===== -->
+  <div id="page-dashboard">
+    <div class="page-header">
+      <h2>Dashboard</h2>
+      <button class="btn btn-primary manager-only" onclick="navigate('interests')">+ New Interest</button>
+    </div>
+    <div class="page-content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-active">–</div>
+          <div class="stat-label">Active Interests</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-scheduled">–</div>
+          <div class="stat-label">Scheduled Jobs</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-resources">–</div>
+          <div class="stat-label">Trusted Resources</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-reports-24h">–</div>
+          <div class="stat-label">Reports Sent (24 h)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-iocs-total">–</div>
+          <div class="stat-label">IOCs</div>
+          <div class="stat-ioc-breakdown">
+            <span id="stat-ioc-ips">–</span> IPs &nbsp;·&nbsp;
+            <span id="stat-ioc-hashes">–</span> Hashes &nbsp;·&nbsp;
+            <span id="stat-ioc-urls">–</span> URLs &nbsp;·&nbsp;
+            <span id="stat-ioc-domains">–</span> Domains
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-cols">
+
+        <!-- Upcoming runs -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Upcoming Runs</div>
+              <div class="card-subtitle">Next scheduled execution</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">↻</button>
+          </div>
+          <div class="dash-scroll-body">
+            <table class="dash-table">
+              <thead>
+                <tr>
+                  <th>Interest</th>
+                  <th>Next Run</th>
+                </tr>
+              </thead>
+              <tbody id="upcoming-runs">
+                <tr><td colspan="2" class="dash-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent activity feed -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Recent Reports</div>
+              <div class="card-subtitle">Latest completed runs</div>
+            </div>
+          </div>
+          <div class="dash-scroll-body">
+            <div id="activity-feed">
+              <div class="dash-empty">Loading…</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== INTERESTS ===== -->
+  <div id="page-interests" class="hidden">
+    <div class="page-header">
+      <h2>Interests</h2>
+      <button class="btn btn-primary manager-only" onclick="openInterestModal()">+ Add Interest</button>
+    </div>
+    <div class="page-content">
+      <div id="interests-list">
+        <div style="color:var(--citadel-muted);padding:20px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RESOURCES ===== -->
+  <div id="page-resources" class="hidden">
+    <div class="page-header">
+      <h2>Trusted Resources</h2>
+      <button class="btn btn-primary" onclick="openResourceModal()">+ Add Resource</button>
+    </div>
+    <div class="page-content">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Trusted resources are independent monitors. Each runs on its own schedule, searches its source, and saves a Markdown report — just like interests.
+      </div>
+      <div id="resources-list">
+        <div style="color:var(--citadel-muted);padding:20px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SUMMARY REPORTS ===== -->
+  <div id="page-summary-reports" class="hidden">
+    <div class="page-header">
+      <h2>Summary Reports</h2>
+      <button class="btn btn-primary manager-only" onclick="openSummaryModal()">+ New Summary Report</button>
+    </div>
+    <div class="page-content">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Summary reports synthesize collected intelligence from matching interests and trusted resources over their reporting cadence. Tag matching links a summary to the interests and resources it should include.
+      </div>
+      <div id="summary-reports-list">
+        <div style="color:var(--citadel-muted);padding:20px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS ===== -->
+  <div id="page-settings" class="hidden">
+    <div class="page-header">
+      <h2>Settings</h2>
+      <button class="btn btn-primary" onclick="saveSettings()">Save All Settings</button>
+    </div>
+    <div class="page-content">
+
+      <!-- LLM -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">AI / LLM Integration</div>
+            <div class="card-subtitle">Configure your language model for report generation</div>
+          </div>
+          <div id="llm-status"></div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom:16px">
+          <strong>Getting an Anthropic API key:</strong>
+          Visit <strong>console.anthropic.com</strong> → Sign up / Log in → API Keys → Create Key.
+          Copy the key and paste it below. Keep it secret — it is stored locally on this server only.
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select id="llm-provider" class="form-control">
+              <option value="anthropic">Anthropic (Claude)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Model</label>
+            <select id="llm-model" class="form-control">
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (recommended)</option>
+              <option value="claude-opus-4-7">Claude Opus 4.7 (most capable)</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fastest)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input id="llm-api-key" type="password" class="form-control" placeholder="sk-ant-…">
+          <div class="form-hint">Your API key is stored in <code>data/config/settings.yaml</code> on this server.</div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:4px">
+          <button id="test-llm-btn" class="btn btn-success" onclick="testLLMConnection()">Test Connection</button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Search Configuration</div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Search Provider</label>
+            <select id="search-provider" class="form-control" onchange="toggleSearchKeyFields()">
+              <option value="duckduckgo">DuckDuckGo (free, no key needed)</option>
+              <option value="brave">Brave Search (recommended paid — independent index)</option>
+              <option value="serpapi">SerpAPI (Google results)</option>
+            </select>
+            <div class="form-hint">DuckDuckGo is free but may rate-limit heavy usage. Brave and SerpAPI require paid keys.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Max Results per Search</label>
+            <input id="search-max-results" type="number" class="form-control" min="3" max="50" value="10">
+          </div>
+        </div>
+        <div class="form-group hidden" id="brave-key-group">
+          <label class="form-label">Brave Search API Key</label>
+          <input id="brave-api-key" type="password" class="form-control" placeholder="BSA…">
+          <div class="form-hint">Get a key at <strong>api.search.brave.com</strong>. Free tier: 2,000 queries/month. Paid plans available.</div>
+        </div>
+        <div class="form-group hidden" id="serpapi-key-group">
+          <label class="form-label">SerpAPI Key</label>
+          <input id="serpapi-key" type="password" class="form-control" placeholder="serpapi key…">
+          <div class="form-hint">Get a key at <strong>serpapi.com</strong>. 100 free searches/month.</div>
+        </div>
+      </div>
+
+      <!-- Email -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Email (SMTP)</div>
+          <div class="card-subtitle">Used when output type includes "email"</div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">SMTP Host</label>
+            <input id="smtp-host" type="text" class="form-control" placeholder="smtp.gmail.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">SMTP Port</label>
+            <input id="smtp-port" type="number" class="form-control" value="587">
+          </div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input id="smtp-user" type="text" class="form-control" placeholder="you@gmail.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password / App Password</label>
+            <input id="smtp-password" type="password" class="form-control" placeholder="••••••••">
+          </div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">From Address</label>
+            <input id="smtp-from" type="text" class="form-control" placeholder="Nx-Citadel <you@gmail.com>">
+            <div class="form-hint">Use <code>Display Name &lt;email@address&gt;</code> format to brand the sender.</div>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input id="smtp-tls" type="checkbox" checked> Use STARTTLS
+            </label>
+          </div>
+        </div>
+        <div class="form-hint" style="margin-bottom:10px">
+          <strong>Gmail users:</strong> your regular Gmail password will not work here. You must generate a 16-character
+          <strong>App Password</strong>: Google Account → Security → 2-Step Verification → App Passwords.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button id="test-email-btn" class="btn btn-success" onclick="testEmailConnection()">Test Email</button>
+          <span id="test-email-result" style="align-self:center;font-size:0.85rem"></span>
+        </div>
+      </div>
+
+      <!-- SMS -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">SMS (Twilio)</div>
+          <div class="card-subtitle">Used when output type includes "sms"</div>
+        </div>
+        <div class="alert alert-info" style="margin-bottom:16px">
+          Get credentials at <strong>twilio.com</strong> → Console → Account SID &amp; Auth Token.
+          You'll also need a Twilio phone number to send from.
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Account SID</label>
+            <input id="twilio-sid" type="text" class="form-control" placeholder="ACxxxxxxxx…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Auth Token</label>
+            <input id="twilio-token" type="password" class="form-control" placeholder="••••••••">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">From Number</label>
+          <input id="twilio-from" type="text" class="form-control" placeholder="+15551234567">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Test Number</label>
+          <input id="sms-test-number" type="text" class="form-control" placeholder="+15559876543">
+          <div class="form-hint">Number to receive the test SMS. Must be a verified Twilio number on trial accounts.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button id="test-sms-btn" class="btn btn-success" onclick="testSMSConnection()">Test SMS</button>
+          <span id="test-sms-result" style="font-size:0.85rem"></span>
+        </div>
+      </div>
+
+      <!-- Slack -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Slack</div>
+          <div class="card-subtitle">Default webhook for Slack output (can override per-interest)</div>
+        </div>
+        <div class="alert alert-info" style="margin-bottom:16px">
+          Create an Incoming Webhook: <strong>api.slack.com/apps</strong> → Your App → Incoming Webhooks → Add New Webhook.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default Webhook URL</label>
+          <input id="slack-default-webhook" type="text" class="form-control" placeholder="https://hooks.slack.com/services/…">
+        </div>
+      </div>
+
+      <!-- Discord -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Discord</div>
+          <div class="card-subtitle">Default webhook for Discord output (can override per-interest)</div>
+        </div>
+        <div class="alert alert-info" style="margin-bottom:16px">
+          Create a Webhook in Discord: open your server → channel settings → <strong>Integrations</strong> → <strong>Webhooks</strong> → New Webhook. Copy the URL and paste it below.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default Webhook URL</label>
+          <input id="discord-default-webhook" type="text" class="form-control" placeholder="https://discord.com/api/webhooks/…">
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button id="test-discord-btn" class="btn btn-success" onclick="testDiscordConnection()">Test Discord</button>
+          <span id="test-discord-result" style="align-self:center;font-size:0.85rem"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== LOGS ===== -->
+  <div id="page-logs" class="hidden">
+    <div class="page-header">
+      <h2>Application Logs</h2>
+      <button class="btn btn-ghost" onclick="loadLogs()">↻ Refresh</button>
+    </div>
+    <div class="page-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Live Log</div>
+          <div class="card-subtitle">Last 300 entries from <code>logs/citadel.log</code></div>
+        </div>
+        <div id="log-viewer" class="log-viewer"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Archived Logs</div>
+          <div class="card-subtitle">Compressed daily archives in <code>logs/archive/</code></div>
+        </div>
+        <div id="archive-list" class="log-viewer" style="max-height:200px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ADMIN ===== -->
+  <div id="page-admin" class="hidden">
+    <div class="page-header">
+      <h2>Admin — Backup &amp; Restore</h2>
+    </div>
+    <div class="page-content">
+
+      <!-- Full System -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Full System Backup</div>
+          <div class="card-subtitle">Everything in <code>data/</code> — settings, interests, resources, reports, IOC data, and users</div>
+        </div>
+        <div class="admin-actions">
+          <div class="admin-action-group">
+            <div class="admin-action-label">Export</div>
+            <p class="form-hint">Download a single ZIP containing all system data. Use this for a complete snapshot before upgrades or migrations.</p>
+            <button class="btn btn-primary" onclick="adminExport('full')">⬇ Download Full Backup</button>
+          </div>
+          <div class="admin-action-divider"></div>
+          <div class="admin-action-group">
+            <div class="admin-action-label">Restore</div>
+            <p class="form-hint" style="color:var(--citadel-warn)">⚠ Overwrites all existing data. Upload a ZIP previously exported from this system.</p>
+            <button class="btn btn-danger" onclick="adminRestore('full','.zip')">⬆ Restore Full Backup</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Build Package -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Build Deployment Package</div>
+          <div class="card-subtitle">Package current Citadel source files into <code>deploy/</code> for redistribution</div>
+        </div>
+        <div class="admin-action-group">
+          <div class="admin-action-label">Create Package</div>
+          <p class="form-hint">
+            Bundles all core application files (excluding <code>data/</code>, <code>logs/</code>, <code>.venv/</code>, and compiled artifacts)
+            into a deployable <code>.tar.gz</code>. An integrity check runs automatically — if any source files are
+            missing from the archive the build is rejected and no package is written.
+          </p>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button id="build-pkg-btn" class="btn btn-primary" onclick="adminBuildPackage()">⚙ Build Package Now</button>
+            <a id="download-pkg-btn" class="btn btn-ghost hidden" href="/api/admin/download-package" download>⬇ Download Package</a>
+            <span id="build-pkg-result" style="font-size:0.85rem;color:var(--citadel-muted)"></span>
+          </div>
+          <div id="build-pkg-error" class="hidden" style="margin-top:12px;padding:10px 14px;background:rgba(239,68,68,0.1);border:1px solid var(--citadel-danger);border-radius:6px;font-size:0.82rem">
+            <strong style="color:var(--citadel-danger)">Integrity check failed — missing files:</strong>
+            <pre id="build-pkg-missing" style="margin:6px 0 0;white-space:pre-wrap;color:var(--citadel-danger)"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Granular backup/restore grid (2 columns): Settings + 5 granular tiles -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:0">
+
+        <!-- Settings Configuration -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Settings Configuration</div>
+            <div class="card-subtitle">SMTP, API keys, search — <code>data/config/settings.yaml</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">Raw <code>settings.yaml</code> including all credentials. Store securely.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('settings')">⬇ Export Settings</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Replaces current settings. Reload Settings page after restoring.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('settings','.yaml,.yml')">⬆ Restore Settings</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interests -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Interests</div>
+            <div class="card-subtitle">Monitored topics — <code>data/interests/</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">ZIP of all interest Markdown files.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('interests')">⬇ Export Interests</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Same-ID files overwritten.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('interests','.zip')">⬆ Restore Interests</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trusted Resources -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Trusted Resources</div>
+            <div class="card-subtitle">Source definitions — <code>data/resources/</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">ZIP of all trusted resource Markdown files.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('resources')">⬇ Export Resources</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Same-ID files overwritten.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('resources','.zip')">⬆ Restore Resources</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reports -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Reports</div>
+            <div class="card-subtitle">Generated reports — <code>data/reports/</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">ZIP preserving per-interest folder structure.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('reports')">⬇ Export Reports</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Matching filenames overwritten.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('reports','.zip')">⬆ Restore Reports</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- IOC Data -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">IOC Data</div>
+            <div class="card-subtitle">Threat indicators — <code>data/iocs/</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">IPs, hashes, URLs, domains + source config. Store securely.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('iocs')">⬇ Export IOC Data</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Overwrites existing IOC files. No restart needed.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('iocs','.zip')">⬆ Restore IOC Data</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Users -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Users</div>
+            <div class="card-subtitle">User accounts — <code>data/users/</code></div>
+          </div>
+          <div class="admin-actions">
+            <div class="admin-action-group">
+              <div class="admin-action-label">Export</div>
+              <p class="form-hint">ZIP of all user account files.</p>
+              <button class="btn btn-primary btn-sm" onclick="adminExport('users')">⬇ Export Users</button>
+            </div>
+            <div class="admin-action-divider"></div>
+            <div class="admin-action-group">
+              <div class="admin-action-label">Restore</div>
+              <p class="form-hint" style="color:var(--citadel-warn)">⚠ Same-ID accounts overwritten. Reload after restoring.</p>
+              <button class="btn btn-danger btn-sm" onclick="adminRestore('users','.zip')">⬆ Restore Users</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div style="margin-bottom:16px"></div>
+
+      <!-- Self-Update / Recovery -->
+      <div class="card" style="border:1px solid var(--citadel-accent)">
+        <div class="card-header">
+          <div class="card-title">🔄 Self-Update / Recovery</div>
+          <div class="card-subtitle">Backup, snapshot current code, then update core system files from a deployment package</div>
+        </div>
+        <div class="admin-action-group">
+          <div class="admin-action-label">Update from Package URL</div>
+          <p class="form-hint">
+            This wizard performs four steps automatically:
+            <strong>(1)</strong> create a full data backup,
+            <strong>(2)</strong> snapshot current code into a deployment package,
+            <strong>(3)</strong> download the specified package and overwrite core files (data and config are always preserved),
+            <strong>(4)</strong> update Python dependencies and restart Citadel.
+          </p>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+            <input id="su-url" type="url" class="form-control"
+              style="flex:1;min-width:320px;max-width:580px;font-family:monospace;font-size:0.82rem"
+              value="https://www.antonizick.com/nxcitadel/nxcitadel-latest.tar.gz"
+              placeholder="https://…/nxcitadel-latest.tar.gz">
+            <button id="su-start-btn" class="btn btn-primary" onclick="adminSelfUpdate()">🔄 Begin Update</button>
+          </div>
+
+          <!-- Progress panel (hidden until update starts) -->
+          <div id="su-panel" class="hidden">
+            <!-- Step indicator bar -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+              <div id="su-step-1" style="border:1px solid var(--citadel-border);border-radius:6px;padding:10px 6px;text-align:center;font-size:0.75rem;font-weight:600;transition:all 0.3s">1 — Backup</div>
+              <div id="su-step-2" style="border:1px solid var(--citadel-border);border-radius:6px;padding:10px 6px;text-align:center;font-size:0.75rem;font-weight:600;transition:all 0.3s">2 — Snapshot</div>
+              <div id="su-step-3" style="border:1px solid var(--citadel-border);border-radius:6px;padding:10px 6px;text-align:center;font-size:0.75rem;font-weight:600;transition:all 0.3s">3 — Install</div>
+              <div id="su-step-4" style="border:1px solid var(--citadel-border);border-radius:6px;padding:10px 6px;text-align:center;font-size:0.75rem;font-weight:600;transition:all 0.3s">4 — Restart</div>
+            </div>
+            <!-- Log output -->
+            <div id="su-log"
+              style="background:var(--citadel-bg);border:1px solid var(--citadel-border);border-radius:6px;
+                     padding:12px 16px;font-family:monospace;font-size:0.8rem;line-height:1.8;
+                     max-height:300px;overflow-y:auto"></div>
+            <!-- Reconnect countdown (shown after complete) -->
+            <div id="su-reconnect" class="hidden" style="margin-top:16px;padding:14px 16px;
+              background:#0d2b1a;border:1px solid var(--citadel-success);border-radius:6px;
+              display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <span style="color:var(--citadel-success);font-weight:600">
+                Update complete! Page reloads in <span id="su-countdown">10</span> seconds…
+              </span>
+              <button class="btn btn-primary" onclick="location.reload()">Reload Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminate Sessions -->
+      <div class="card" style="border:1px solid var(--citadel-warning,#f59e0b)">
+        <div class="card-header">
+          <div class="card-title" style="color:var(--citadel-warning,#f59e0b)">⚡ Terminate All Sessions</div>
+          <div class="card-subtitle">Immediately log out every active user and force reauthentication</div>
+        </div>
+        <div class="admin-action-group">
+          <p class="form-hint" style="margin-bottom:16px">
+            This instantly invalidates every active session on the server — all other users will be redirected to
+            the login page on their next request. <strong>Your own session is preserved.</strong>
+          </p>
+          <button class="btn btn-warning" onclick="terminateSessions()" style="background:var(--citadel-warning,#f59e0b);border-color:var(--citadel-warning,#f59e0b);color:#000">
+            Terminate All Sessions
+          </button>
+        </div>
+      </div>
+
+      <!-- Factory Reset -->
+      <div class="card" style="border:1px solid var(--citadel-danger)">
+        <div class="card-header">
+          <div class="card-title" style="color:var(--citadel-danger)">⚠ Factory Reset</div>
+          <div class="card-subtitle">Permanently wipes all configuration, interests, resources, and reports</div>
+        </div>
+        <div id="factory-reset-idle">
+          <p class="form-hint" style="margin-bottom:16px">
+            This action <strong>cannot be undone</strong>. The system will be returned to a clean installation state.
+            All interests, trusted resources, reports, and settings will be permanently deleted.<br><br>
+            Export a full backup above before proceeding.
+          </p>
+          <button class="btn btn-danger" onclick="factoryResetRequest()">Request Factory Reset Code</button>
+        </div>
+        <div id="factory-reset-challenge" class="hidden">
+          <p class="form-hint" style="margin-bottom:12px">
+            A one-time validation code has been generated. Type it exactly into the field below and click
+            <strong>Confirm Reset</strong> to proceed. The code expires in 10 minutes.
+          </p>
+          <div style="background:var(--citadel-bg);border:1px solid var(--citadel-danger);border-radius:6px;padding:16px 24px;margin-bottom:16px;text-align:center">
+            <div style="font-size:0.75rem;color:var(--citadel-muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px">Your validation code</div>
+            <div id="reset-challenge-code" style="font-family:monospace;font-size:2rem;letter-spacing:0.3em;color:var(--citadel-danger);font-weight:700"></div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <input id="reset-code-input" type="text" class="form-control"
+              placeholder="Type the 8-character code above"
+              maxlength="8"
+              style="max-width:260px;text-transform:uppercase;letter-spacing:0.2em;font-family:monospace;font-size:1.1rem"
+              oninput="this.value=this.value.toUpperCase()">
+            <button class="btn btn-danger" onclick="factoryResetConfirm()">Confirm Reset — Wipe Everything</button>
+            <button class="btn btn-ghost" onclick="factoryResetCancel()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- System State + Default Resource Prompt (2-column grid) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:0">
+
+        <!-- System State -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">System State</div>
+            <div class="card-subtitle">Controls operational mode — set to <code>dev</code> to suppress scheduled report generation</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <input id="system-state-input" type="text" class="form-control"
+              style="max-width:240px;font-family:monospace"
+              placeholder="e.g. dev — leave blank for normal operation"
+              oninput="updateDevModeBadge()">
+            <button class="btn btn-primary" onclick="saveSystemState()">Save</button>
+            <span id="system-state-badge"></span>
+          </div>
+          <p class="form-hint" style="margin-top:10px">
+            When set to <code>dev</code> (case-insensitive): scheduled runs for interests, trusted resources, and summary reports are suppressed with a log entry.
+            Manual runs still work. Admin users can delete individual reports while in dev mode.
+          </p>
+        </div>
+
+        <!-- Default Trusted Resources Prompt -->
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div class="card-title">Default Trusted Resources Prompt</div>
+            <div class="card-subtitle">Applied to new trusted resource monitors — overrides the built-in default</div>
+          </div>
+          <textarea id="default-resource-prompt-input" class="form-control"
+            rows="10"
+            style="font-family:monospace;font-size:0.8rem;resize:vertical;width:100%"
+            placeholder="Leave blank to use the built-in default prompt…"></textarea>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+            <button class="btn btn-primary" onclick="saveDefaultResourcePrompt()">Save Prompt</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetDefaultResourcePrompt()">Reset to Built-in</button>
+          </div>
+          <p class="form-hint" style="margin-top:8px">
+            This prompt is pre-loaded into the prompt field whenever a new trusted resource is created.
+            Leave blank to revert to the built-in default. Existing resources are not affected.
+          </p>
+        </div>
+
+      </div>
+      <div style="margin-bottom:16px"></div>
+
+    </div>
+  </div>
+
+  <!-- ===== IOC: IP ADDRESSES ===== -->
+  <div id="page-ioc-ips" class="hidden">
+    <div class="page-header">
+      <h2>IOC — IP Addresses</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm manager-only" onclick="runIocMaintenance()" title="Expire & cap IOCs now">⚙ Maintenance</button>
+        <span class="ioc-header-divider manager-only"></span>
+        <button class="btn btn-ghost btn-sm" onclick="downloadIocTemplate('ip')" title="Download CSV template for IP addresses">⬇ Template</button>
+        <button class="btn btn-ghost btn-sm manager-only" onclick="openBulkUploadModal('ip')" title="Bulk upload IPs from CSV">⬆ Bulk Upload</button>
+        <button class="btn btn-primary manager-only" onclick="openIocModal('ip')">+ Add IP</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="ioc-grid-ip"><div style="color:var(--citadel-muted);padding:20px">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ===== IOC: HASHES ===== -->
+  <div id="page-ioc-hashes" class="hidden">
+    <div class="page-header">
+      <h2>IOC — File Hashes</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm manager-only" onclick="runIocMaintenance()" title="Expire & cap IOCs now">⚙ Maintenance</button>
+        <span class="ioc-header-divider manager-only"></span>
+        <button class="btn btn-ghost btn-sm" onclick="downloadIocTemplate('hash')" title="Download CSV template for file hashes">⬇ Template</button>
+        <button class="btn btn-ghost btn-sm manager-only" onclick="openBulkUploadModal('hash')" title="Bulk upload hashes from CSV">⬆ Bulk Upload</button>
+        <button class="btn btn-primary manager-only" onclick="openIocModal('hash')">+ Add Hash</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="ioc-grid-hash"><div style="color:var(--citadel-muted);padding:20px">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ===== IOC: URLs ===== -->
+  <div id="page-ioc-urls" class="hidden">
+    <div class="page-header">
+      <h2>IOC — Malicious URLs</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm manager-only" onclick="runIocMaintenance()" title="Expire & cap IOCs now">⚙ Maintenance</button>
+        <span class="ioc-header-divider manager-only"></span>
+        <button class="btn btn-ghost btn-sm" onclick="downloadIocTemplate('url')" title="Download CSV template for URLs">⬇ Template</button>
+        <button class="btn btn-ghost btn-sm manager-only" onclick="openBulkUploadModal('url')" title="Bulk upload URLs from CSV">⬆ Bulk Upload</button>
+        <button class="btn btn-primary manager-only" onclick="openIocModal('url')">+ Add URL</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="ioc-grid-url"><div style="color:var(--citadel-muted);padding:20px">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ===== IOC: DOMAINS ===== -->
+  <div id="page-ioc-domains" class="hidden">
+    <div class="page-header">
+      <h2>IOC — Malicious Domains</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm manager-only" onclick="runIocMaintenance()" title="Expire & cap IOCs now">⚙ Maintenance</button>
+        <span class="ioc-header-divider manager-only"></span>
+        <button class="btn btn-ghost btn-sm" onclick="downloadIocTemplate('domain')" title="Download CSV template for domains">⬇ Template</button>
+        <button class="btn btn-ghost btn-sm manager-only" onclick="openBulkUploadModal('domain')" title="Bulk upload domains from CSV">⬆ Bulk Upload</button>
+        <button class="btn btn-primary manager-only" onclick="openIocModal('domain')">+ Add Domain</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="ioc-grid-domain"><div style="color:var(--citadel-muted);padding:20px">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ===== IOC CONFIGURATION ===== -->
+  <div id="page-ioc-config" class="hidden">
+    <div class="page-header">
+      <h2>IOC Configuration</h2>
+      <button class="btn btn-primary" onclick="saveIocConfig()">Save Configuration</button>
+    </div>
+    <div class="page-content" id="ioc-config-content">
+      <div style="color:var(--citadel-muted);padding:20px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ===== USERS ===== -->
+  <div id="page-users" class="hidden">
+    <div class="page-header">
+      <h2>User Management</h2>
+      <button class="btn btn-primary" onclick="openUserModal()">+ Add User</button>
+    </div>
+    <div class="page-content">
+      <div class="card">
+        <div id="users-list"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ══════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════ -->
+
+<!-- Interest Modal -->
+<div id="interest-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="interest-modal-title">New Interest</h3>
+      <button class="modal-close" onclick="closeInterestModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="interest-form" onsubmit="return false">
+
+        <div class="tabs">
+          <button type="button" class="tab-btn active" onclick="switchTab(this,'tab-basic')">Basic Info</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'tab-schedule')">Schedule</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'tab-output')">Output</button>
+        </div>
+
+        <!-- Basic -->
+        <div id="tab-basic" class="tab-panel active">
+          <div class="form-group">
+            <label class="form-label">Name <span style="color:var(--citadel-danger)">*</span></label>
+            <input id="interest-name" type="text" class="form-control" placeholder="e.g. Quantum Computing, Elon Musk, NVIDIA">
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select id="interest-type" class="form-control">
+                <option value="term">Term / Topic</option>
+                <option value="person">Person</option>
+                <option value="technology">Technology</option>
+                <option value="company">Company</option>
+                <option value="event">Event</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input id="interest-active" type="checkbox" checked> Active (schedule runs)
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Keywords</label>
+            <div id="interest-keywords" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="Type keyword, press Enter…">
+            </div>
+            <div class="form-hint">Additional search terms to include alongside the name.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags</label>
+            <div id="interest-tags" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="work, urgent, geopolitics…">
+            </div>
+            <div class="form-hint">Organizational labels to help categorize and filter interests.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description / Context</label>
+            <textarea id="interest-body" class="form-control" rows="4"
+              placeholder="Provide context about what you're monitoring. This helps the AI generate better reports."></textarea>
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div id="tab-schedule" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Schedule Type</label>
+            <select id="schedule-type" class="form-control">
+              <option value="manual">Manual only (no automatic runs)</option>
+              <option value="interval" selected>Interval (every N hours/days)</option>
+              <option value="weekly">Weekly (specific days)</option>
+              <option value="cron">Custom cron expression</option>
+            </select>
+          </div>
+
+          <!-- Interval -->
+          <div id="interval-fields" class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Every</label>
+              <input id="interval-value" type="number" class="form-control" value="1" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit</label>
+              <select id="interval-unit" class="form-control">
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
+                <option value="weeks">Weeks</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Weekly -->
+          <div id="weekly-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Days of Week</label>
+              <div class="day-picker">
+                <button type="button" class="day-btn" data-day="0">M</button>
+                <button type="button" class="day-btn" data-day="1">T</button>
+                <button type="button" class="day-btn" data-day="2">W</button>
+                <button type="button" class="day-btn" data-day="3">T</button>
+                <button type="button" class="day-btn" data-day="4">F</button>
+                <button type="button" class="day-btn" data-day="5">S</button>
+                <button type="button" class="day-btn" data-day="6">S</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cron -->
+          <div id="cron-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Cron Expression</label>
+              <input id="cron-expression" type="text" class="form-control" placeholder="0 9 * * 1-5">
+              <div class="form-hint">Standard 5-field cron: minute hour day month weekday. Example: <code>0 9 * * 1-5</code> = 9am Mon–Fri.</div>
+            </div>
+          </div>
+
+          <!-- Time (for weekly) -->
+          <div id="weekly-fields-time" class="form-group" style="display:none">
+            <!-- shown dynamically -->
+          </div>
+          <div class="form-group">
+            <label class="form-label">Run Time (UTC)</label>
+            <input id="run-time" type="time" class="form-control" value="09:00">
+            <div class="form-hint">Applies to weekly schedules. Interval schedules start from first run.</div>
+          </div>
+        </div>
+
+        <!-- Output -->
+        <div id="tab-output" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Delivery Channels</label>
+            <div class="form-hint" style="margin-bottom:8px">Reports are always saved as Markdown files. Select additional delivery channels below.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="out-email" type="checkbox"> Email
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="out-slack" type="checkbox"> Slack
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="out-sms" type="checkbox"> SMS
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="out-discord" type="checkbox"> Discord
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email Recipients</label>
+            <div id="interest-email-recipients" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="email@example.com, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SMS Numbers</label>
+            <div id="interest-sms-numbers" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="+15551234567, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Slack Webhook (override default)</label>
+            <input id="slack-webhook" type="text" class="form-control" placeholder="https://hooks.slack.com/services/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Discord Webhook (override default)</label>
+            <input id="discord-webhook" type="text" class="form-control" placeholder="https://discord.com/api/webhooks/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Report Format</label>
+            <select id="report-format" class="form-control">
+              <option value="markdown">Markdown</option>
+              <option value="html">HTML</option>
+            </select>
+          </div>
+        </div>
+
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeInterestModal()">Cancel</button>
+      <button id="save-interest-btn" class="btn btn-primary" onclick="saveInterest()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resource Modal -->
+<div id="resource-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="resource-modal-title">New Trusted Resource</h3>
+      <button class="modal-close" onclick="closeResourceModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="resource-form" onsubmit="return false">
+
+        <div class="tabs">
+          <button type="button" class="tab-btn active" onclick="switchTab(this,'res-tab-basic')">Basic Info</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'res-tab-schedule')">Schedule</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'res-tab-output')">Output</button>
+        </div>
+
+        <!-- Basic -->
+        <div id="res-tab-basic" class="tab-panel active">
+          <div class="form-group">
+            <label class="form-label">Name <span style="color:var(--citadel-danger)">*</span></label>
+            <input id="resource-name" type="text" class="form-control" placeholder="e.g. Krebs on Security">
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select id="resource-type" class="form-control">
+                <option value="website">Website</option>
+                <option value="rss">RSS Feed</option>
+                <option value="blog">Blog</option>
+                <option value="news">News Source</option>
+                <option value="academic">Academic</option>
+                <option value="government">Government</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input id="resource-active" type="checkbox" checked> Active (schedule runs)
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Source <span style="color:var(--citadel-danger)">*</span></label>
+            <input id="resource-source" type="text" class="form-control" placeholder="e.g. krebsonsecurity.com or https://krebsonsecurity.com">
+            <div class="form-hint">URL or name of the source. Used as the search target and inserted into the prompt below.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags</label>
+            <div id="resource-tags" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="security, news, threat-intel…">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Prompt</label>
+            <textarea id="resource-prompt" class="form-control" rows="5"></textarea>
+            <div class="form-hint"><code>[ SOURCE ]</code> in the prompt is replaced with the Source value above at run time.</div>
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div id="res-tab-schedule" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Schedule Type</label>
+            <select id="res-schedule-type" class="form-control">
+              <option value="manual">Manual only (no automatic runs)</option>
+              <option value="interval" selected>Interval (every N hours/days)</option>
+              <option value="weekly">Weekly (specific days)</option>
+              <option value="cron">Custom cron expression</option>
+            </select>
+          </div>
+
+          <div id="res-interval-fields" class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Every</label>
+              <input id="res-interval-value" type="number" class="form-control" value="1" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit</label>
+              <select id="res-interval-unit" class="form-control">
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
+                <option value="weeks">Weeks</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="res-weekly-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Days of Week</label>
+              <div class="day-picker">
+                <button type="button" class="res-day-btn" data-day="0">M</button>
+                <button type="button" class="res-day-btn" data-day="1">T</button>
+                <button type="button" class="res-day-btn" data-day="2">W</button>
+                <button type="button" class="res-day-btn" data-day="3">T</button>
+                <button type="button" class="res-day-btn" data-day="4">F</button>
+                <button type="button" class="res-day-btn" data-day="5">S</button>
+                <button type="button" class="res-day-btn" data-day="6">S</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="res-cron-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Cron Expression</label>
+              <input id="res-cron-expression" type="text" class="form-control" placeholder="0 9 * * 1-5">
+              <div class="form-hint">Standard 5-field cron: minute hour day month weekday.</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Run Time (UTC)</label>
+            <input id="res-run-time" type="time" class="form-control" value="09:00">
+            <div class="form-hint">Applies to weekly schedules. Interval schedules start from first run.</div>
+          </div>
+        </div>
+
+        <!-- Output -->
+        <div id="res-tab-output" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Delivery Channels</label>
+            <div class="form-hint" style="margin-bottom:8px">Reports are always saved as Markdown files. Select additional delivery channels below.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="res-out-email" type="checkbox"> Email
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="res-out-slack" type="checkbox"> Slack
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="res-out-sms" type="checkbox"> SMS
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="res-out-discord" type="checkbox"> Discord
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email Recipients</label>
+            <div id="res-email-recipients" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="email@example.com, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SMS Numbers</label>
+            <div id="res-sms-numbers" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="+15551234567, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Slack Webhook (override default)</label>
+            <input id="res-slack-webhook" type="text" class="form-control" placeholder="https://hooks.slack.com/services/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Discord Webhook (override default)</label>
+            <input id="res-discord-webhook" type="text" class="form-control" placeholder="https://discord.com/api/webhooks/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Report Format</label>
+            <select id="res-report-format" class="form-control">
+              <option value="markdown">Markdown</option>
+              <option value="html">HTML</option>
+            </select>
+          </div>
+        </div>
+
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeResourceModal()">Cancel</button>
+      <button id="save-resource-btn" class="btn btn-primary" onclick="saveResource()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Report Modal -->
+<div id="summary-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="summary-modal-title">New Summary Report</h3>
+      <button class="modal-close" onclick="closeSummaryModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="summary-form" onsubmit="return false">
+
+        <div class="tabs">
+          <button type="button" class="tab-btn active" onclick="switchTab(this,'sr-tab-basic')">Basic Info</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'sr-tab-schedule')">Schedule</button>
+          <button type="button" class="tab-btn" onclick="switchTab(this,'sr-tab-output')">Output</button>
+        </div>
+
+        <!-- Basic Info -->
+        <div id="sr-tab-basic" class="tab-panel active">
+          <div class="form-group">
+            <label class="form-label">Name <span style="color:var(--citadel-danger)">*</span></label>
+            <input id="sr-name" type="text" class="form-control" placeholder="e.g. Weekly Geopolitical Digest">
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input id="sr-active" type="checkbox" checked> Active (schedule runs)
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags</label>
+            <div id="sr-tags" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="geopolitics, security, work…">
+            </div>
+            <div class="form-hint">Interests and trusted resources sharing any of these tags will be included. Leave empty to include all.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description / Context</label>
+            <textarea id="sr-body" class="form-control" rows="5"
+              placeholder="Describe what this summary should focus on and how it should be structured. This context is passed to the AI to shape the synthesis."></textarea>
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div id="sr-tab-schedule" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Schedule Type</label>
+            <select id="sr-schedule-type" class="form-control">
+              <option value="manual">Manual only (no automatic runs)</option>
+              <option value="interval" selected>Interval (every N hours/days)</option>
+              <option value="weekly">Weekly (specific days)</option>
+              <option value="cron">Custom cron expression</option>
+            </select>
+          </div>
+
+          <div id="sr-interval-fields" class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Every</label>
+              <input id="sr-interval-value" type="number" class="form-control" value="1" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit</label>
+              <select id="sr-interval-unit" class="form-control">
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
+                <option value="weeks">Weeks</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="sr-weekly-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Days of Week</label>
+              <div class="day-picker">
+                <button type="button" class="sr-day-btn" data-day="0">M</button>
+                <button type="button" class="sr-day-btn" data-day="1">T</button>
+                <button type="button" class="sr-day-btn" data-day="2">W</button>
+                <button type="button" class="sr-day-btn" data-day="3">T</button>
+                <button type="button" class="sr-day-btn" data-day="4">F</button>
+                <button type="button" class="sr-day-btn" data-day="5">S</button>
+                <button type="button" class="sr-day-btn" data-day="6">S</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="sr-cron-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label">Cron Expression</label>
+              <input id="sr-cron-expression" type="text" class="form-control" placeholder="0 9 * * 1-5">
+              <div class="form-hint">Standard 5-field cron: minute hour day month weekday.</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Run Time (UTC)</label>
+            <input id="sr-run-time" type="time" class="form-control" value="09:00">
+            <div class="form-hint">The summary looks back over one full cadence period each time it runs.</div>
+          </div>
+        </div>
+
+        <!-- Output -->
+        <div id="sr-tab-output" class="tab-panel">
+          <div class="form-group">
+            <label class="form-label">Delivery Channels</label>
+            <div class="form-hint" style="margin-bottom:8px">Summaries are always saved as Markdown files. Select additional delivery channels below.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="sr-out-email" type="checkbox"> Email
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="sr-out-slack" type="checkbox"> Slack
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="sr-out-sms" type="checkbox"> SMS
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="sr-out-discord" type="checkbox"> Discord
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email Recipients</label>
+            <div id="sr-email-recipients" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="email@example.com, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SMS Numbers</label>
+            <div id="sr-sms-numbers" class="tags-input">
+              <input type="text" class="tag-input-field" placeholder="+15551234567, press Enter…">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Slack Webhook (override default)</label>
+            <input id="sr-slack-webhook" type="text" class="form-control" placeholder="https://hooks.slack.com/services/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Discord Webhook (override default)</label>
+            <input id="sr-discord-webhook" type="text" class="form-control" placeholder="https://discord.com/api/webhooks/…">
+            <div class="form-hint">Leave blank to use the default webhook from Settings.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Report Format</label>
+            <select id="sr-report-format" class="form-control">
+              <option value="markdown">Markdown</option>
+              <option value="html">HTML</option>
+            </select>
+          </div>
+        </div>
+
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSummaryModal()">Cancel</button>
+      <button id="save-summary-btn" class="btn btn-primary" onclick="saveSummaryReport()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reports Modal -->
+<div id="reports-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <h3 id="reports-title">Reports</h3>
+      <button class="modal-close" onclick="document.getElementById('reports-modal').classList.add('hidden')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="reports-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('reports-modal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Report Content Modal -->
+<div id="report-content-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:860px">
+    <div class="modal-header">
+      <div>
+        <h3>Report</h3>
+        <span id="report-generated-date" style="font-size:0.75em;color:var(--citadel-accent);display:none"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button id="report-delete-btn" class="btn btn-danger btn-sm hidden" onclick="deleteCurrentReport()">Delete Report</button>
+        <button class="modal-close" onclick="document.getElementById('report-content-modal').classList.add('hidden')">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="report-content" class="markdown-body"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('report-content-modal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Report Delete Confirmation Modal -->
+<div id="report-delete-confirm-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 style="color:var(--citadel-danger)">Delete Report</h3>
+      <button class="modal-close" onclick="document.getElementById('report-delete-confirm-modal').classList.add('hidden')">×</button>
+    </div>
+    <div class="modal-body">
+      <p>Are you sure you want to permanently delete this report? This action cannot be undone.</p>
+      <p id="report-delete-filename" style="font-family:monospace;font-size:0.85rem;color:var(--citadel-muted);margin-top:8px"></p>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('report-delete-confirm-modal').classList.add('hidden')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDeleteReport()">Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="/static/js/app.js?v={{ v }}"></script>
+<script>
+function switchTab(btn, panelId) {
+  btn.closest('.modal-body, .page-content').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.closest('.modal-body, .page-content').querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+}
+</script>
+
+<!-- Profile Modal -->
+<div id="profile-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>My Profile</h3>
+      <button class="modal-close" onclick="closeProfileModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="tabs">
+        <button type="button" class="tab-btn active" id="profile-tab-pw-btn" onclick="switchTab(this,'profile-tab-pw')">Password</button>
+        <button type="button" class="tab-btn" id="profile-tab-mfa-btn" onclick="switchTab(this,'profile-tab-mfa')">MFA / Authenticator</button>
+      </div>
+
+      <!-- Password tab -->
+      <div id="profile-tab-pw" class="tab-panel active" style="padding-top:16px">
+        <div class="form-group">
+          <label class="form-label">Current Password</label>
+          <input id="pw-current" type="password" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input id="pw-new" type="password" class="form-control" placeholder="Minimum 8 characters">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm New Password</label>
+          <input id="pw-confirm" type="password" class="form-control">
+        </div>
+        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+      </div>
+
+      <!-- MFA tab -->
+      <div id="profile-tab-mfa" class="tab-panel" style="padding-top:16px">
+        <div id="mfa-status-enabled" class="hidden">
+          <p class="form-hint" style="margin-bottom:16px">
+            MFA is <strong style="color:var(--citadel-success)">enabled</strong> on your account.
+            Enter your current authenticator code below to disable it.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Current Authenticator Code</label>
+            <input id="mfa-disable-code" type="tel" class="form-control" maxlength="6" placeholder="6-digit code" style="letter-spacing:0.2em;font-family:monospace">
+          </div>
+          <button class="btn btn-danger" onclick="disableMFA()">Disable MFA</button>
+        </div>
+        <div id="mfa-status-setup" class="hidden">
+          <div id="mfa-setup-step1">
+            <p class="form-hint" style="margin-bottom:16px">
+              MFA is <strong style="color:var(--citadel-muted)">not enabled</strong>.
+              Click below to generate a QR code to scan with Google Authenticator.
+            </p>
+            <button class="btn btn-primary" onclick="beginMFASetup()">Set Up MFA</button>
+          </div>
+          <div id="mfa-setup-step2" class="hidden">
+            <p class="form-hint" style="margin-bottom:12px">Scan this QR code with <strong>Google Authenticator</strong> (or any TOTP app), then enter the 6-digit code to confirm.</p>
+            <div style="text-align:center;margin:16px 0">
+              <img id="mfa-qr-img" src="" alt="QR Code" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:6px">
+            </div>
+            <p class="form-hint" style="margin-bottom:4px">Or enter this secret manually:</p>
+            <div id="mfa-secret-text" style="font-family:monospace;font-size:0.9rem;letter-spacing:0.1em;color:var(--citadel-accent);margin-bottom:16px;word-break:break-all"></div>
+            <div class="form-group">
+              <label class="form-label">Confirm Code from Authenticator</label>
+              <input id="mfa-confirm-code" type="tel" class="form-control" maxlength="6" placeholder="6-digit code" style="letter-spacing:0.2em;font-family:monospace">
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-primary" onclick="confirmMFASetup()">Confirm &amp; Enable MFA</button>
+              <button class="btn btn-ghost" onclick="cancelMFASetup()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- User Create/Edit Modal -->
+<div id="user-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 id="user-modal-title">Add User</h3>
+      <button class="modal-close" onclick="closeUserModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="user-edit-id">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input id="user-username" type="text" class="form-control" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="user-pw-label">Password</label>
+        <input id="user-password" type="password" class="form-control" placeholder="Minimum 8 characters" autocomplete="new-password">
+        <div class="form-hint" id="user-pw-hint" style="display:none">Leave blank to keep current password</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <select id="user-role" class="form-control">
+          <option value="user">User — view only</option>
+          <option value="manager">Citadel Manager — view + edit interests/settings</option>
+          <option value="admin">Citadel Admin — full access + user management</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="user-mfa-exempt" type="checkbox">
+          MFA Exempt <span class="form-hint" style="display:inline">(skip MFA requirement for managers/admins)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeUserModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">Save User</button>
+    </div>
+  </div>
+</div>
+
+<!-- IOC Bulk Upload Modal -->
+<div id="ioc-bulk-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <h3 id="ioc-bulk-modal-title">Bulk Upload</h3>
+      <button class="modal-close" onclick="closeBulkUploadModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">CSV File <span style="color:var(--citadel-danger)">*</span></label>
+        <input id="ioc-bulk-file" type="file" class="form-control" accept=".csv,text/csv">
+        <div class="form-hint">
+          No template yet?
+          <a href="#" id="ioc-bulk-template-link" onclick="downloadIocTemplate(_iocBulkType);return false"
+             style="color:var(--citadel-accent);text-decoration:none">Download the CSV template</a>
+          to get started. Use <code style="font-size:0.78rem">|</code> to separate multiple values in
+          <em>tags</em>, <em>sources</em>, and <em>refs</em> columns.
+        </div>
+      </div>
+
+      <hr style="border-color:var(--citadel-border);margin:16px 0 12px">
+      <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--citadel-muted);margin-bottom:6px">Bulk Override Values</div>
+      <div class="form-hint" style="margin-bottom:14px">Optionally apply priority and/or expiration to all uploaded records. Conflict resolution below controls which source wins when both the CSV row and this form have a value.</div>
+
+      <div class="form-row form-row-2">
+        <div class="form-group">
+          <label class="form-label">Priority Override</label>
+          <select id="ioc-bulk-priority" class="form-control">
+            <option value="">— none —</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Expiration Date</label>
+          <input id="ioc-bulk-expires" type="date" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Conflict Resolution</label>
+        <select id="ioc-bulk-conflict" class="form-control">
+          <option value="csv_wins">CSV values take precedence</option>
+          <option value="form_wins">Form values take precedence</option>
+        </select>
+        <div class="form-hint">When both the CSV row and the form above specify priority or expiration, which one wins?</div>
+      </div>
+
+      <div id="ioc-bulk-results" class="hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBulkUploadModal()">Cancel</button>
+      <button class="btn btn-primary" id="ioc-bulk-submit-btn">⬆ Upload CSV</button>
+    </div>
+  </div>
+</div>
+
+<!-- IOC Add / Edit Modal -->
+<div id="ioc-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <h3 id="ioc-modal-title">Add IOC</h3>
+      <button class="modal-close" onclick="closeIocModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="ioc-form" onsubmit="return false">
+
+        <!-- Common fields -->
+        <div class="form-group">
+          <label class="form-label">Value <span style="color:var(--citadel-danger)">*</span></label>
+          <input id="ioc-value" type="text" class="form-control" placeholder="IP, hash, URL, or domain">
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select id="ioc-status" class="form-control">
+              <option value="">— unknown —</option>
+              <option value="online">Online / Active</option>
+              <option value="offline">Offline</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Threat Type</label>
+            <input id="ioc-threat-type" type="text" class="form-control" placeholder="c2, malware_download, phishing…">
+          </div>
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Malware Family</label>
+            <input id="ioc-malware-family" type="text" class="form-control" placeholder="Mirai, QakBot, Emotet…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reporter</label>
+            <input id="ioc-reporter" type="text" class="form-control" placeholder="Source reporter / org">
+          </div>
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">First Seen</label>
+            <input id="ioc-first-seen" type="date" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags <span class="form-hint" style="display:inline">(comma-separated)</span></label>
+            <input id="ioc-tags" type="text" class="form-control" placeholder="elf, mips, 32-bit…">
+          </div>
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Sources <span class="form-hint" style="display:inline">(comma-separated)</span></label>
+            <input id="ioc-sources" type="text" class="form-control" placeholder="feodo_tracker, urlhaus…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reference URLs <span class="form-hint" style="display:inline">(comma-separated)</span></label>
+            <input id="ioc-refs" type="text" class="form-control" placeholder="https://…">
+          </div>
+        </div>
+
+        <!-- IP-specific -->
+        <div id="ioc-ip-fields">
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">Port</label>
+              <input id="ioc-port" type="number" class="form-control" placeholder="443">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Country Code</label>
+              <input id="ioc-country" type="text" class="form-control" placeholder="US, GB, DE…" maxlength="3">
+            </div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">ASN Number</label>
+              <input id="ioc-asn" type="number" class="form-control" placeholder="14061">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ASN Name</label>
+              <input id="ioc-asn-name" type="text" class="form-control" placeholder="DIGITALOCEAN-ASN">
+            </div>
+          </div>
+        </div>
+
+        <!-- Hash-specific -->
+        <div id="ioc-hash-fields">
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">MD5 Hash</label>
+              <input id="ioc-hash-md5" type="text" class="form-control" style="font-family:monospace;font-size:0.8rem" placeholder="32-char hex">
+            </div>
+            <div class="form-group">
+              <label class="form-label">SHA-1 Hash</label>
+              <input id="ioc-hash-sha1" type="text" class="form-control" style="font-family:monospace;font-size:0.8rem" placeholder="40-char hex">
+            </div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label">File Type</label>
+              <input id="ioc-file-type" type="text" class="form-control" placeholder="exe, elf, dll, jar…">
+            </div>
+            <div class="form-group">
+              <label class="form-label">File Name</label>
+              <input id="ioc-file-name" type="text" class="form-control" placeholder="original filename">
+            </div>
+          </div>
+        </div>
+
+        <!-- User-managed fields (all types) -->
+        <hr style="border-color:var(--citadel-border);margin:16px 0 12px">
+        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--citadel-muted);margin-bottom:10px">User Overrides</div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="form-label">Priority Override</label>
+            <select id="ioc-priority" class="form-control">
+              <option value="">— none —</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiration Date</label>
+            <input id="ioc-expires-at" type="date" class="form-control">
+            <div class="form-hint">Blank = no expiry (falls off only at 1000-record cap).</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="ioc-notes" class="form-control" rows="2" placeholder="Analyst notes…"></textarea>
+        </div>
+
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeIocModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveIoc()">Save IOC</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

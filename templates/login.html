@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nx-Citadel — Sign In</title>
+  <script>if(localStorage.getItem('citadel-theme')==='light')document.documentElement.classList.add('light-theme');</script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0b0f1a;
+      --surface:  #111827;
+      --border:   #1e2d45;
+      --accent:   #1e6fc0;
+      --accent2:  #38bdf8;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --danger:   #ef4444;
+      --success:  #22c55e;
+      --warn:     #f59e0b;
+    }
+    html.light-theme {
+      --bg:      #f0f2f5;
+      --surface: #ffffff;
+      --border:  #d1d8e4;
+      --accent:  #1e60c8;
+      --accent2: #1e60c8;
+      --text:    #0f172a;
+      --muted:   #475569;
+      --danger:  #c8302e;
+    }
+    html.light-theme body { -webkit-font-smoothing: antialiased; }
+
+    .theme-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      transition: color .15s, border-color .15s;
+    }
+    .theme-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+      justify-content: center;
+    }
+    .logo-row img {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: center 30%;
+      border: 2px solid var(--border);
+    }
+    .logo-text h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.02em; }
+    .logo-text small { color: var(--muted); font-size: 0.78rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 32px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .form-group { margin-bottom: 18px; }
+    .form-label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+    .form-control {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-control:focus { border-color: var(--accent); }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { opacity: .85; }
+
+    .error-msg {
+      background: rgba(239,68,68,.1);
+      border: 1px solid var(--danger);
+      border-radius: 6px;
+      color: var(--danger);
+      padding: 10px 14px;
+      font-size: 0.88rem;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    .hint {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .mfa-digits {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin: 8px 0 4px;
+    }
+    .mfa-digits input {
+      width: 42px; height: 52px;
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      outline: none;
+    }
+    .mfa-digits input:focus { border-color: var(--accent2); }
+
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+    .step-dot.active { background: var(--accent2); }
+
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .back-link:hover { color: var(--text); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<button class="theme-btn" id="login-theme-toggle" onclick="toggleLoginTheme()" title="Toggle light/dark theme">☀</button>
+
+<div class="login-wrap">
+
+  <div class="logo-row">
+    <img src="/static/img/logo.jpg" alt="Nx-Citadel">
+    <div class="logo-text">
+      <h1>Nx-Citadel</h1>
+      <small>Intelligence Monitor</small>
+    </div>
+  </div>
+
+  <!-- Step 1 — Password -->
+  <div id="step-password" class="card">
+    <div class="step-indicator">
+      <div class="step-dot active"></div>
+      <div class="step-dot" id="dot-2"></div>
+    </div>
+    <div class="card-title">Sign In</div>
+    <div id="pw-error" class="error-msg"></div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input id="username" type="text" class="form-control" autocomplete="username" autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input id="password" type="password" class="form-control" autocomplete="current-password">
+    </div>
+    <button id="login-btn" class="btn btn-primary" onclick="doLogin()">Sign In</button>
+    <p class="hint">Nx-Citadel · Self-hosted Intelligence Monitor</p>
+  </div>
+
+  <!-- Step 2 — MFA -->
+  <div id="step-mfa" class="card hidden">
+    <div class="step-indicator">
+      <div class="step-dot"></div>
+      <div class="step-dot active"></div>
+    </div>
+    <div class="card-title">Two-Factor Authentication</div>
+    <p style="font-size:.88rem;color:var(--muted);text-align:center;margin-bottom:20px">
+      Enter the 6-digit code from your authenticator app.
+    </p>
+    <div id="mfa-error" class="error-msg"></div>
+    <div class="mfa-digits" id="mfa-inputs"></div>
+    <div style="margin-top:20px">
+      <button id="mfa-btn" class="btn btn-primary" onclick="doMFA()">Verify</button>
+    </div>
+    <span class="back-link" onclick="backToPassword()">← Back to sign in</span>
+  </div>
+
+</div>
+
+<input type="hidden" id="pending-token">
+
+<script>
+  function toggleLoginTheme() {
+    const light = document.documentElement.classList.toggle('light-theme');
+    localStorage.setItem('citadel-theme', light ? 'light' : 'dark');
+    const btn = document.getElementById('login-theme-toggle');
+    if (btn) { btn.textContent = light ? '🌙' : '☀'; btn.title = light ? 'Switch to dark theme' : 'Switch to light theme'; }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('login-theme-toggle');
+    if (!btn) return;
+    const light = document.documentElement.classList.contains('light-theme');
+    btn.textContent = light ? '🌙' : '☀';
+    btn.title = light ? 'Switch to dark theme' : 'Switch to light theme';
+  });
+
+  const $ = id => document.getElementById(id);
+
+  // Build 6 individual digit inputs
+  const mfaWrap = $('mfa-inputs');
+  for (let i = 0; i < 6; i++) {
+    const inp = document.createElement('input');
+    inp.type = 'tel';
+    inp.maxLength = 1;
+    inp.inputMode = 'numeric';
+    inp.pattern = '[0-9]';
+    inp.addEventListener('input', e => {
+      if (e.target.value && i < 5) mfaWrap.children[i + 1].focus();
+      if (getMFACode().length === 6) doMFA();
+    });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !e.target.value && i > 0)
+        mfaWrap.children[i - 1].focus();
+    });
+    inp.addEventListener('paste', e => {
+      e.preventDefault();
+      const digits = (e.clipboardData.getData('text').replace(/\D/g, '')).slice(0, 6);
+      [...digits].forEach((d, idx) => { if (mfaWrap.children[idx]) mfaWrap.children[idx].value = d; });
+      if (digits.length === 6) { mfaWrap.children[5].focus(); doMFA(); }
+    });
+    mfaWrap.appendChild(inp);
+  }
+
+  function getMFACode() {
+    return [...mfaWrap.children].map(i => i.value).join('');
+  }
+
+  function showError(elId, msg) {
+    const el = $(elId);
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+  function clearError(elId) { $(elId).classList.remove('visible'); }
+
+  $('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  async function doLogin() {
+    clearError('pw-error');
+    const btn = $('login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Signing in…';
+    try {
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username: $('username').value, password: $('password').value }),
+      });
+      const data = await r.json();
+      if (!r.ok) { showError('pw-error', data.detail || 'Sign in failed'); return; }
+      if (data.requires_mfa) {
+        $('pending-token').value = data.pending_token;
+        $('step-password').classList.add('hidden');
+        $('step-mfa').classList.remove('hidden');
+        $('dot-2').classList.add('active');
+        mfaWrap.children[0].focus();
+      } else {
+        window.location.href = '/';
+      }
+    } catch(e) { showError('pw-error', 'Network error — is the server running?'); }
+    finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+  }
+
+  async function doMFA() {
+    clearError('mfa-error');
+    const code = getMFACode();
+    if (code.length !== 6) return;
+    const btn = $('mfa-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Verifying…';
+    try {
+      const r = await fetch('/api/auth/verify-mfa', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pending_token: $('pending-token').value, code }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        showError('mfa-error', data.detail || 'Invalid code');
+        [...mfaWrap.children].forEach(i => i.value = '');
+        mfaWrap.children[0].focus();
+        return;
+      }
+      window.location.href = '/';
+    } catch(e) { showError('mfa-error', 'Network error'); }
+    finally { btn.disabled = false; btn.textContent = 'Verify'; }
+  }
+
+  function backToPassword() {
+    $('step-mfa').classList.add('hidden');
+    $('step-password').classList.remove('hidden');
+    $('pending-token').value = '';
+    [...mfaWrap.children].forEach(i => i.value = '');
+    clearError('mfa-error');
+    clearError('pw-error');
+  }
+</script>
+</body>
+</html>
