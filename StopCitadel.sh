@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${SCRIPT_DIR}/.citadel.pid"
-PORT=8000
+PORT=9123
 SERVICE_NAME="citadel"   # systemd unit name (citadel.service)
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -71,14 +71,14 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 # ── 3. Kill any remaining run.py / uvicorn processes for this project ─────────
-#    Matches processes whose command line contains both 'run.py' OR 'uvicorn'
-#    and the project directory path, to avoid killing unrelated servers.
+#    Matches only processes whose cmdline contains this project's own directory
+#    path, so other uvicorn/run.py servers on the box (e.g. Lucent's voice box)
+#    are never touched.
 mapfile -t STRAY_PIDS < <(
   pgrep -f "run\.py" 2>/dev/null || true
 )
-# Also catch uvicorn launched directly
 mapfile -t UVICORN_PIDS < <(
-  pgrep -f "uvicorn.*app" 2>/dev/null || true
+  pgrep -f "uvicorn.*app\.main" 2>/dev/null || true
 )
 ALL_PIDS=("${STRAY_PIDS[@]:-}" "${UVICORN_PIDS[@]:-}")
 
@@ -87,9 +87,10 @@ for PID in "${ALL_PIDS[@]}"; do
   # Skip our own shell process
   [[ "$PID" == "$$" ]] && continue
   if kill -0 "$PID" 2>/dev/null; then
+    CWD=$(readlink "/proc/${PID}/cwd" 2>/dev/null || true)
     CMDLINE=$(cat "/proc/${PID}/cmdline" 2>/dev/null | tr '\0' ' ' || true)
-    # Only kill if it belongs to this project or is on our port
-    if echo "$CMDLINE" | grep -q "run\.py\|uvicorn"; then
+    # Only kill if the process's cwd or cmdline is under this project's directory
+    if [[ "$CWD" == "$SCRIPT_DIR"* ]] || echo "$CMDLINE" | grep -qF "$SCRIPT_DIR"; then
       info "Killing stray process (PID: ${PID}): ${CMDLINE:0:80}…"
       kill "$PID" 2>/dev/null || true
       sleep 2
