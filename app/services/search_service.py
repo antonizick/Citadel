@@ -160,19 +160,3 @@ async def _serpapi_search(query: str, max_results: int, api_key: str, timelimit:
     except Exception as e:
         logger.error("SerpAPI search failed for '%s': %s", query, e)
         return []
-
-
-async def search_trusted_resource(url: str, query: str) -> list[dict]:
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "Nx-Citadel/1.0"})
-        return [{
-            "title": f"Trusted: {url}",
-            "url": url,
-            "snippet": resp.text[:500].strip(),
-            "source": "trusted_resource",
-        }]
-    except Exception as e:
-        logger.warning("Failed to fetch trusted resource %s: %s", url, e)
-        return []

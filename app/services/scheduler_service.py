@@ -17,11 +17,22 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+def _window_hours(schedule: dict) -> int:
+    """How far back to pull stories. Floored at 48h to match DEFAULT_RESOURCE_PROMPT's
+    48-hour brief; a longer-cadence resource (e.g. weekly) widens the window to its interval
+    so it doesn't miss content between runs."""
+    per_unit = {"minutes": 1 / 60, "hours": 1, "days": 24, "weeks": 168}
+    unit = schedule.get("interval_unit", "days")
+    value = int(schedule.get("interval_value", 1))
+    return max(48, int(per_unit.get(unit, 24) * value))
+
+
 async def run_resource(resource_id: str, manual: bool = False) -> dict:
-    """Execute a full search+summarize+output pipeline for one trusted resource."""
+    """Fetch the resource's source (feed/page) → extract article text → date-filter →
+    summarize → deliver. Resources are FETCHED, not web-searched."""
     from app.config import is_dev_mode
     from app.storage.markdown_store import resources_store
-    from app.services.search_service import search_multi
+    from app.services.fetch_service import collect_stories
     from app.services.ai_service import summarize_resource
     from app.services.output_service import deliver_resource_outputs
     from app.models import DEFAULT_RESOURCE_PROMPT
@@ -43,12 +54,12 @@ async def run_resource(resource_id: str, manual: bool = False) -> dict:
     schedule = resource.get("schedule", {})
 
     output_sent: list[str] = []
-    search_results: list[dict] = []
+    stories: list[dict] = []
     error = None
 
     try:
-        search_results = await search_multi(source or name, [], schedule)
-        summary = await summarize_resource(name, rendered_prompt, search_results)
+        stories = await collect_stories(source, hours=_window_hours(schedule))
+        summary = await summarize_resource(name, rendered_prompt, stories)
         await deliver_resource_outputs(resource, summary, output_sent)
     except Exception as e:
         error = str(e)
@@ -61,12 +72,16 @@ async def run_resource(resource_id: str, manual: bool = False) -> dict:
         "resource_id": resource_id,
         "resource_name": name,
         "ran_at": now,
-        "search_results": search_results,
+        # Slim metadata only — full article text stays out of the API response.
+        "stories": [{"title": s.get("title"), "url": s.get("url"), "published": s.get("published")} for s in stories],
         "output_sent": output_sent,
         "error": error,
     }
-    logger.info("Completed resource '%s' — %d results, outputs: %s", name, len(search_results), output_sent)
+    logger.info("Completed resource '%s' — %d stories, outputs: %s", name, len(stories), output_sent)
     return result
+
+
+INTEREST_ENRICH_TOP_N = 5  # top search results to fetch full article text for
 
 
 async def run_interest(interest_id: str, manual: bool = False) -> dict:
@@ -74,6 +89,7 @@ async def run_interest(interest_id: str, manual: bool = False) -> dict:
     from app.config import is_dev_mode
     from app.storage.markdown_store import interests_store
     from app.services.search_service import search_multi
+    from app.services.fetch_service import fetch_urls_text
     from app.services.ai_service import summarize_results
     from app.services.output_service import deliver_outputs
 
@@ -100,6 +116,21 @@ async def run_interest(interest_id: str, manual: bool = False) -> dict:
     try:
         search_results = await search_multi(name, keywords, schedule)
 
+        # Best-effort: fetch full article text for the top few results so the summary can
+        # draw on article bodies, not just search snippets. Failures here (site down, blocked,
+        # nothing extractable) just leave those results on their snippet — never fatal to the run.
+        try:
+            top_urls = [r["url"] for r in search_results[:INTEREST_ENRICH_TOP_N] if r.get("url")]
+            enriched = await fetch_urls_text(top_urls, max_urls=INTEREST_ENRICH_TOP_N)
+            for r in search_results:
+                text = enriched.get(r.get("url"))
+                if text:
+                    r["full_text"] = text
+            if enriched:
+                logger.info("Enriched %d/%d top result(s) for '%s' with full article text", len(enriched), len(top_urls), name)
+        except Exception as e:
+            logger.warning("Search-result enrichment failed for '%s': %s", name, e)
+
         # Pull pre-collected trusted resource reports (no live fetch)
         from app.services.output_service import get_recent_resource_reports
         resource_reports = get_recent_resource_reports()
@@ -120,7 +151,8 @@ async def run_interest(interest_id: str, manual: bool = False) -> dict:
         "interest_id": interest_id,
         "interest_name": name,
         "ran_at": now,
-        "search_results": search_results,
+        # Slim metadata only — full enriched article text stays out of the API response.
+        "search_results": [{"title": r.get("title"), "url": r.get("url"), "enriched": bool(r.get("full_text"))} for r in search_results],
         "resource_reports": len(resource_reports),
         "output_sent": output_sent,
         "error": error,
