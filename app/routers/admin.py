@@ -38,14 +38,12 @@ def _zip_dir(source: Path) -> bytes:
 
 
 def _zip_iocs() -> bytes:
-    """Zip IOC data files + IOC source config into one archive rooted at data/."""
+    """Zip the IOC SQLite DB + IOC source config into one archive rooted at data/."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        iocs_dir = DATA_DIR / "iocs"
-        if iocs_dir.exists():
-            for p in sorted(iocs_dir.rglob("*")):
-                if p.is_file():
-                    zf.write(p, p.relative_to(DATA_DIR))
+        db_path = DATA_DIR / "iocs.db"
+        if db_path.exists():
+            zf.write(db_path, db_path.relative_to(DATA_DIR))
         for name in ("ioc_sources.yaml", "ioc_sync_status.yaml"):
             cfg = DATA_DIR / "config" / name
             if cfg.exists():
@@ -131,9 +129,9 @@ def backup_reports():
 
 @router.get("/backup/iocs")
 def backup_iocs():
-    iocs_dir = DATA_DIR / "iocs"
-    if not iocs_dir.exists():
-        raise HTTPException(404, "IOC data directory not found — run a pull first")
+    db_path = DATA_DIR / "iocs.db"
+    if not db_path.exists():
+        raise HTTPException(404, "IOC database not found — run a pull first")
     data = _zip_iocs()
     log_user_action(logger, "IOC data exported")
     return _zip_response(data, f"nxcitadel_iocs_{_timestamp()}.zip")
@@ -152,7 +150,7 @@ def backup_users():
 
 _FULL_RESTORE_DIRS = [
     "interests", "resources", "reports", "resource_reports",
-    "summary_reports", "iocs", "config", "users",
+    "summary_reports", "config", "users",
 ]
 
 
@@ -177,6 +175,9 @@ async def restore_full(file: UploadFile = File(...)):
         path = DATA_DIR / subdir
         if path.exists():
             shutil.rmtree(path)
+    db_path = DATA_DIR / "iocs.db"
+    if db_path.exists():
+        db_path.unlink()
 
     count = _safe_extract(content, DATA_DIR)
     log_user_action(logger, "Full system restore applied — clean wipe + restore (%d files)", count)
@@ -605,6 +606,11 @@ def factory_reset_confirm(payload: dict):
             shutil.rmtree(path)
             wiped.append(target)
         path.mkdir(parents=True, exist_ok=True)
+
+    db_path = DATA_DIR / "iocs.db"
+    if db_path.exists():
+        db_path.unlink()
+        wiped.append("iocs.db")
 
     # Recreate expected subdirs
     (DATA_DIR / "logs" / "archive").mkdir(parents=True, exist_ok=True)

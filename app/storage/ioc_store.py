@@ -1,224 +1,220 @@
-"""IOC storage — one YAML-frontmatter markdown file per IOC type.
+"""IOC storage — SQLite-backed store for IPs, hashes, URLs, and domains.
 
-Files:
-    data/iocs/ips.md
-    data/iocs/hashes.md
-    data/iocs/urls.md
-    data/iocs/domains.md
-
-Each file stores all records of that type as a YAML list in the frontmatter.
-Deduplication is by normalised value. Sources/refs are merged on collision.
+DB file: data/iocs.db (single table, one row per IOC; type-specific fields
+live in a JSON blob column since the record shape already varies per type).
+Deduplication is by (ioc_type, normalised value). Sources/refs are merged on collision.
+No record-count cap — only expiry-based pruning in run_maintenance().
 """
 from __future__ import annotations
 
+import json
+import sqlite3
 import uuid
-import frontmatter
-from pathlib import Path
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 IOC_TYPES = ("ip", "hash", "url", "domain")
-MAX_RECORDS = 1000
 
-_DATA_DIR = Path("data/iocs")
-_FILES: dict[str, Path] = {
-    "ip":     _DATA_DIR / "ips.md",
-    "hash":   _DATA_DIR / "hashes.md",
-    "url":    _DATA_DIR / "urls.md",
-    "domain": _DATA_DIR / "domains.md",
-}
+_DB_PATH = Path("data/iocs.db")
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS iocs (
+    id TEXT PRIMARY KEY,
+    ioc_type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    value_normalized TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT,
+    data TEXT NOT NULL,
+    UNIQUE(ioc_type, value_normalized)
+);
+CREATE INDEX IF NOT EXISTS idx_iocs_type ON iocs(ioc_type);
+"""
+
+_EXTRA_EXCLUDE = ("id", "ioc_type", "value", "added_at", "updated_at", "expires_at")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _ensure(ioc_type: str) -> None:
-    path = _FILES[ioc_type]
-    if path.exists():
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    post = frontmatter.Post("", ioc_type=ioc_type, last_updated=_now(), ioc_count=0, iocs=[])
-    with open(path, "wb") as f:
-        frontmatter.dump(post, f)
+@contextmanager
+def _conn():
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_SCHEMA)
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
-def _load(ioc_type: str) -> list[dict]:
-    _ensure(ioc_type)
-    post = frontmatter.load(str(_FILES[ioc_type]))
-    return list(post.metadata.get("iocs") or [])
+def _row_to_record(row: sqlite3.Row) -> dict:
+    record = json.loads(row["data"])
+    record.update({
+        "id": row["id"],
+        "ioc_type": row["ioc_type"],
+        "value": row["value"],
+        "added_at": row["added_at"],
+        "updated_at": row["updated_at"],
+    })
+    if row["expires_at"]:
+        record["expires_at"] = row["expires_at"]
+    return record
 
 
-def _save(ioc_type: str, iocs: list[dict]) -> None:
-    path = _FILES[ioc_type]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    post = frontmatter.Post(
-        "",
-        ioc_type=ioc_type,
-        last_updated=_now(),
-        ioc_count=len(iocs),
-        iocs=iocs,
+def _record_to_row(ioc_type: str, record: dict) -> tuple:
+    norm = record["value"].strip().lower()
+    extra = {k: v for k, v in record.items() if k not in _EXTRA_EXCLUDE}
+    return (
+        record["id"], ioc_type, record["value"], norm,
+        record["added_at"], record["updated_at"], record.get("expires_at"),
+        json.dumps(extra),
     )
-    with open(path, "wb") as f:
-        frontmatter.dump(post, f)
+
+
+def _merge_lists(conn: sqlite3.Connection, existing_id: str, existing_data: str, data: dict, now: str) -> None:
+    rec = json.loads(existing_data)
+    changed = False
+    for s in data.get("sources", []):
+        if s not in rec.setdefault("sources", []):
+            rec["sources"].append(s)
+            changed = True
+    for r in data.get("refs", []):
+        if r not in rec.setdefault("refs", []):
+            rec["refs"].append(r)
+            changed = True
+    if changed:
+        conn.execute(
+            "UPDATE iocs SET data = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(rec), now, existing_id),
+        )
 
 
 class IocStore:
     def list(self, ioc_type: str) -> list[dict]:
-        return _load(ioc_type)
+        with _conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM iocs WHERE ioc_type = ? ORDER BY added_at", (ioc_type,)
+            ).fetchall()
+        return [_row_to_record(r) for r in rows]
 
     def get(self, ioc_type: str, ioc_id: str) -> Optional[dict]:
-        return next((r for r in _load(ioc_type) if r.get("id") == ioc_id), None)
+        with _conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM iocs WHERE ioc_type = ? AND id = ?", (ioc_type, ioc_id)
+            ).fetchone()
+        return _row_to_record(row) if row else None
 
     def create_batch(self, ioc_type: str, records: list[dict]) -> int:
-        """Bulk insert/merge. One file read + one write. Returns count of new records added."""
+        """Bulk insert/merge. One connection for the whole batch. Returns count of new records added."""
         if not records:
             return 0
-        iocs = _load(ioc_type)
-        index: dict[str, int] = {
-            rec.get("value", "").strip().lower(): i for i, rec in enumerate(iocs)
-        }
         now = _now()
         added = 0
-        dirty = False
-
-        for data in records:
-            norm = data.get("value", "").strip().lower()
-            if not norm:
-                continue
-            if norm in index:
-                rec = iocs[index[norm]]
-                for s in data.get("sources", []):
-                    if s not in rec.setdefault("sources", []):
-                        rec["sources"].append(s)
-                        dirty = True
-                for r in data.get("refs", []):
-                    if r not in rec.setdefault("refs", []):
-                        rec["refs"].append(r)
-                        dirty = True
-                if dirty:
-                    rec["updated_at"] = now
-            else:
-                if len(iocs) >= MAX_RECORDS:
+        with _conn() as conn:
+            for data in records:
+                norm = data.get("value", "").strip().lower()
+                if not norm:
                     continue
-                record = {
-                    **data,
-                    "id": str(uuid.uuid4()),
-                    "ioc_type": ioc_type,
-                    "added_at": now,
-                    "updated_at": now,
-                }
-                iocs.append(record)
-                index[norm] = len(iocs) - 1
-                added += 1
-                dirty = True
-
-        if dirty:
-            _save(ioc_type, iocs)
+                existing = conn.execute(
+                    "SELECT id, data FROM iocs WHERE ioc_type = ? AND value_normalized = ?",
+                    (ioc_type, norm),
+                ).fetchone()
+                if existing:
+                    _merge_lists(conn, existing["id"], existing["data"], data, now)
+                else:
+                    record = {**data, "id": str(uuid.uuid4()), "added_at": now, "updated_at": now}
+                    conn.execute(
+                        "INSERT INTO iocs (id, ioc_type, value, value_normalized, added_at, updated_at, expires_at, data) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        _record_to_row(ioc_type, record),
+                    )
+                    added += 1
         return added
 
     def create(self, ioc_type: str, data: dict) -> dict:
         """Insert new IOC or merge sources/refs into an existing duplicate."""
-        iocs = _load(ioc_type)
         norm = data.get("value", "").strip().lower()
-
-        for rec in iocs:
-            if rec.get("value", "").strip().lower() == norm:
-                changed = False
-                for s in data.get("sources", []):
-                    if s not in rec.setdefault("sources", []):
-                        rec["sources"].append(s)
-                        changed = True
-                for r in data.get("refs", []):
-                    if r not in rec.setdefault("refs", []):
-                        rec["refs"].append(r)
-                        changed = True
-                if changed:
-                    rec["updated_at"] = _now()
-                    _save(ioc_type, iocs)
-                return rec
-
         now = _now()
-        record = {
-            **data,
-            "id": str(uuid.uuid4()),
-            "ioc_type": ioc_type,
-            "added_at": now,
-            "updated_at": now,
-        }
-        iocs.append(record)
-        _save(ioc_type, iocs)
-        return record
+        with _conn() as conn:
+            existing = conn.execute(
+                "SELECT id, data FROM iocs WHERE ioc_type = ? AND value_normalized = ?",
+                (ioc_type, norm),
+            ).fetchone()
+            if existing:
+                _merge_lists(conn, existing["id"], existing["data"], data, now)
+                row = conn.execute("SELECT * FROM iocs WHERE id = ?", (existing["id"],)).fetchone()
+            else:
+                record = {**data, "id": str(uuid.uuid4()), "added_at": now, "updated_at": now}
+                conn.execute(
+                    "INSERT INTO iocs (id, ioc_type, value, value_normalized, added_at, updated_at, expires_at, data) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    _record_to_row(ioc_type, record),
+                )
+                row = conn.execute("SELECT * FROM iocs WHERE id = ?", (record["id"],)).fetchone()
+        return _row_to_record(row)
 
     def update(self, ioc_type: str, ioc_id: str, data: dict) -> Optional[dict]:
-        iocs = _load(ioc_type)
-        for rec in iocs:
-            if rec.get("id") == ioc_id:
-                for k, v in data.items():
-                    if k not in ("id", "added_at", "ioc_type"):
-                        rec[k] = v
-                rec["updated_at"] = _now()
-                _save(ioc_type, iocs)
-                return rec
-        return None
+        with _conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM iocs WHERE ioc_type = ? AND id = ?", (ioc_type, ioc_id)
+            ).fetchone()
+            if not row:
+                return None
+            rec = _row_to_record(row)
+            for k, v in data.items():
+                if k not in ("id", "added_at", "ioc_type"):
+                    rec[k] = v
+            rec["updated_at"] = _now()
+            _, _, value, norm, added_at, updated_at, expires_at, blob = _record_to_row(ioc_type, rec)
+            conn.execute(
+                "UPDATE iocs SET value = ?, value_normalized = ?, updated_at = ?, expires_at = ?, data = ? "
+                "WHERE id = ?",
+                (value, norm, updated_at, expires_at, blob, ioc_id),
+            )
+        return rec
 
     def delete(self, ioc_type: str, ioc_id: str) -> bool:
-        iocs = _load(ioc_type)
-        filtered = [r for r in iocs if r.get("id") != ioc_id]
-        if len(filtered) == len(iocs):
-            return False
-        _save(ioc_type, filtered)
-        return True
+        with _conn() as conn:
+            cur = conn.execute("DELETE FROM iocs WHERE ioc_type = ? AND id = ?", (ioc_type, ioc_id))
+        return cur.rowcount > 0
 
     def run_maintenance(self) -> dict:
-        """Remove expired IOCs and enforce MAX_RECORDS cap (FIFO, expiry-protected records last)."""
+        """Remove expired IOCs. No quantity cap."""
         now = datetime.now(timezone.utc)
         results: dict[str, dict] = {}
 
-        for ioc_type in IOC_TYPES:
-            iocs = _load(ioc_type)
-            before = len(iocs)
+        def _is_expired(exp: Optional[str]) -> bool:
+            if not exp:
+                return False
+            try:
+                dt = datetime.fromisoformat(str(exp))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt < now
+            except Exception:
+                return False
 
-            def _is_expired(rec: dict) -> bool:
-                exp = rec.get("expires_at")
-                if not exp:
-                    return False
-                try:
-                    dt = datetime.fromisoformat(str(exp))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    return dt < now
-                except Exception:
-                    return False
-
-            iocs = [r for r in iocs if not _is_expired(r)]
-            expired = before - len(iocs)
-
-            capped = 0
-            if len(iocs) > MAX_RECORDS:
-                protected = [r for r in iocs if r.get("expires_at")]
-                unprotected = sorted(
-                    [r for r in iocs if not r.get("expires_at")],
-                    key=lambda r: r.get("added_at", ""),
-                )
-                excess = len(iocs) - MAX_RECORDS
-                if excess <= len(unprotected):
-                    unprotected = unprotected[excess:]
-                    capped = excess
-                else:
-                    capped = len(unprotected)
-                    unprotected = []
-                    extra = excess - capped
-                    protected = sorted(protected, key=lambda r: r.get("added_at", ""))[extra:]
-                    capped += extra
-                iocs = protected + unprotected
-
-            _save(ioc_type, iocs)
-            results[ioc_type] = {
-                "expired": expired,
-                "capped": capped,
-                "remaining": len(iocs),
-            }
+        with _conn() as conn:
+            for ioc_type in IOC_TYPES:
+                rows = conn.execute(
+                    "SELECT id, expires_at FROM iocs WHERE ioc_type = ?", (ioc_type,)
+                ).fetchall()
+                before = len(rows)
+                expired_ids = [r["id"] for r in rows if _is_expired(r["expires_at"])]
+                if expired_ids:
+                    conn.executemany("DELETE FROM iocs WHERE id = ?", [(i,) for i in expired_ids])
+                results[ioc_type] = {
+                    "expired": len(expired_ids),
+                    "capped": 0,
+                    "remaining": before - len(expired_ids),
+                }
 
         return results
 
