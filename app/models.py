@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from enum import Enum
 
 
@@ -178,7 +178,9 @@ class SummaryReport(SummaryReportCreate):
 class LLMSettings(BaseModel):
     provider: str = "anthropic"
     api_key: str = ""
+    api_keys: Dict[str, str] = {}  # per-provider key retention, keyed by provider name
     model: str = "claude-sonnet-4-6"
+    ollama_base_url: str = "http://localhost:11434"
 
 
 class EmailSettings(BaseModel):

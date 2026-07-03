@@ -765,6 +765,62 @@ async function deleteResource(id, name) {
    SETTINGS
 ══════════════════════════════════════════ */
 let currentSettings = null;
+let llmApiKeysByProvider = {};
+const ANTHROPIC_MODEL_OPTIONS = [
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (recommended)' },
+  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7 (most capable)' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fastest)' },
+];
+
+function setAnthropicModelOptions(selected) {
+  const sel = document.getElementById('llm-model');
+  sel.innerHTML = ANTHROPIC_MODEL_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+  if (selected && ANTHROPIC_MODEL_OPTIONS.some(o => o.value === selected)) sel.value = selected;
+}
+
+function toggleLLMProviderFields() {
+  const p = document.getElementById('llm-provider').value;
+  const isOllama = p === 'ollama';
+  document.getElementById('llm-api-key-group').classList.toggle('hidden', isOllama);
+  document.getElementById('llm-ollama-url-group').classList.toggle('hidden', !isOllama);
+  document.getElementById('refresh-ollama-models-btn').classList.toggle('hidden', !isOllama);
+  const hint = document.getElementById('llm-provider-hint');
+  hint.innerHTML = isOllama
+    ? '<strong>Using a local Ollama instance:</strong> make sure Ollama is running and reachable at the base URL below. No API key is required.'
+    : '<strong>Getting an Anthropic API key:</strong> Visit <strong>console.anthropic.com</strong> → Sign up / Log in → API Keys → Create Key. Copy the key and paste it below. Keep it secret — it is stored locally on this server only.';
+}
+
+async function onLLMProviderChange() {
+  const p = document.getElementById('llm-provider').value;
+  document.getElementById('llm-api-key').value = llmApiKeysByProvider[p] || '';
+  toggleLLMProviderFields();
+  if (p === 'ollama') {
+    await refreshOllamaModels();
+  } else {
+    setAnthropicModelOptions(currentSettings && currentSettings.llm && currentSettings.llm.provider === p ? currentSettings.llm.model : null);
+  }
+}
+
+async function refreshOllamaModels(preserveModel) {
+  const sel = document.getElementById('llm-model');
+  const baseUrl = document.getElementById('llm-ollama-url').value.trim() || 'http://localhost:11434';
+  const keep = preserveModel || sel.value;
+  const btn = document.getElementById('refresh-ollama-models-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const result = await API.get(`/settings/ollama-models?base_url=${encodeURIComponent(baseUrl)}`);
+    if (result.ok && result.models.length) {
+      sel.innerHTML = result.models.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (result.models.includes(keep)) sel.value = keep;
+    } else {
+      toast('Could not fetch Ollama models: ' + (result.error || 'no models found — is Ollama running?'), 'error');
+    }
+  } catch(e) {
+    toast('Failed to reach Ollama: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 async function loadSettings() {
   try {
@@ -777,7 +833,14 @@ async function loadSettings() {
 
     document.getElementById('llm-provider').value = llm.provider || 'anthropic';
     document.getElementById('llm-api-key').value = llm.api_key || '';
-    document.getElementById('llm-model').value = llm.model || 'claude-sonnet-4-6';
+    document.getElementById('llm-ollama-url').value = llm.ollama_base_url || 'http://localhost:11434';
+    llmApiKeysByProvider = llm.api_keys || {};
+    toggleLLMProviderFields();
+    if (llm.provider === 'ollama') {
+      await refreshOllamaModels(llm.model);
+    } else {
+      setAnthropicModelOptions(llm.model);
+    }
 
     document.getElementById('smtp-host').value = email.smtp_host || '';
     document.getElementById('smtp-port').value = email.smtp_port || 587;
@@ -801,7 +864,8 @@ async function loadSettings() {
     document.getElementById('brave-api-key').value = search.brave_api_key || '';
     toggleSearchKeyFields();
 
-    updateLLMStatus(llm.api_key && llm.api_key !== '***' ? 'configured' : 'unconfigured');
+    const llmConfigured = llm.provider === 'ollama' || !!(llm.api_key && llm.api_key !== '***');
+    updateLLMStatus(llmConfigured ? 'configured' : 'unconfigured');
   } catch(e) { toast('Failed to load settings: ' + e.message, 'error'); }
 }
 
@@ -941,6 +1005,7 @@ async function saveSettings(silent = false) {
       provider: document.getElementById('llm-provider').value,
       api_key: document.getElementById('llm-api-key').value,
       model: document.getElementById('llm-model').value,
+      ollama_base_url: document.getElementById('llm-ollama-url').value.trim() || 'http://localhost:11434',
     },
     email: {
       smtp_host: document.getElementById('smtp-host').value,

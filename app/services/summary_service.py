@@ -140,10 +140,12 @@ async def _synthesize(
 ) -> str:
     from app.config import get_config
     config = get_config()
-    if not config.llm.api_key:
+    if config.llm.provider != "ollama" and not config.llm.api_key:
         return _fallback(summary_name, collected_reports, resource_reports)
     if config.llm.provider == "anthropic":
         return await _anthropic_synthesize(summary_name, description, collected_reports, resource_reports, config)
+    if config.llm.provider == "ollama":
+        return await _ollama_synthesize(summary_name, description, collected_reports, resource_reports, config)
     return _fallback(summary_name, collected_reports, resource_reports)
 
 
@@ -203,6 +205,57 @@ async def _anthropic_synthesize(
         return text
     except Exception as e:
         logger.error("Anthropic synthesis failed: %s", e)
+        return _fallback(summary_name, collected_reports, resource_reports)
+
+
+async def _ollama_synthesize(
+    summary_name: str,
+    description: str,
+    collected_reports: list[dict],
+    resource_reports: list[dict],
+    config,
+) -> str:
+    from app.services.ai_service import _ollama_chat
+    try:
+        resource_block = ""
+        if resource_reports:
+            resource_block = (
+                "\n\n## TRUSTED RESOURCE REPORTS (pre-collected AI summaries)\n"
+                "Each section is a recent AI-analyzed summary from a trusted source monitor. "
+                "Incorporate content that is relevant to the summary topic and call out cross-topic patterns.\n"
+            )
+            for r in resource_reports:
+                resource_block += (
+                    f"\n### Source Monitor: {r['resource_name']} | Collected: {r['ran_at']}\n"
+                    f"{r['content']}\n---\n"
+                )
+
+        reports_block = ""
+        if collected_reports:
+            reports_block = f"\n\n## COLLECTED INTELLIGENCE REPORTS ({len(collected_reports)} reports)\n"
+            for r in collected_reports:
+                reports_block += (
+                    f"\n### Interest: {r['interest_name']} | Collected: {r['ran_at']}\n"
+                    f"{r['content']}\n---\n"
+                )
+
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        user_content = (
+            f"Summary report generated: {now_str}\n"
+            f"Summary name: **{summary_name}**\n"
+            f"User instructions: {description}\n"
+            f"{resource_block}{reports_block}\n\n"
+            "Using ONLY the material above, produce the executive summary. Begin with a "
+            "'Data Coverage' line stating the date range and number of source reports included. "
+            "If trusted resource reports are present, include a 'Trusted Source Highlights' section "
+            "attributing each finding to its source monitor name."
+        )
+
+        text = await _ollama_chat(config.llm.ollama_base_url, config.llm.model, SUMMARY_SYSTEM_PROMPT, user_content, max_tokens=3000)
+        logger.info("AI synthesis generated for '%s' via Ollama (%d chars)", summary_name, len(text))
+        return text
+    except Exception as e:
+        logger.error("Ollama synthesis failed: %s", e)
         return _fallback(summary_name, collected_reports, resource_reports)
 
 

@@ -4,6 +4,43 @@ from app.config import get_config
 
 logger = logging.getLogger(__name__)
 
+
+async def _ollama_chat(base_url: str, model: str, system: str, user_content: str, max_tokens: int = 2048) -> str:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            json={
+                "model": model,
+                "stream": False,
+                # Reasoning models burn the token budget on hidden chain-of-thought before
+                # any visible reply, which can truncate the actual report to nothing —
+                # disable it since we only need the final structured text.
+                "think": False,
+                "options": {"num_predict": max_tokens},
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_content},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["message"]["content"]
+
+
+async def list_ollama_models(base_url: str) -> dict:
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{base_url.rstrip('/')}/api/tags")
+        resp.raise_for_status()
+        models = [m["name"] for m in resp.json().get("models", [])]
+        return {"ok": True, "models": models}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "models": []}
+
 SYSTEM_PROMPT = """You are Nx-Citadel's research assistant. Your ONLY sources of information \
 are the web search results and trusted resource reports provided by the user. You MUST NOT \
 supplement, fill in, or infer details from your training data — if something is not in the \
@@ -31,11 +68,13 @@ async def summarize_results(
     resource_reports: list[dict],
 ) -> str:
     config = get_config()
-    if not config.llm.api_key:
+    if config.llm.provider != "ollama" and not config.llm.api_key:
         return _fallback_summary(interest_name, results, resource_reports)
 
     if config.llm.provider == "anthropic":
         return await _anthropic_summarize(interest_name, description, results, resource_reports, config)
+    if config.llm.provider == "ollama":
+        return await _ollama_summarize(interest_name, description, results, resource_reports, config)
 
     return _fallback_summary(interest_name, results, resource_reports)
 
@@ -96,6 +135,52 @@ async def _anthropic_summarize(
         return _fallback_summary(interest_name, results, resource_reports)
 
 
+async def _ollama_summarize(
+    interest_name: str,
+    description: str,
+    results: list[dict],
+    resource_reports: list[dict],
+    config,
+) -> str:
+    try:
+        resource_block = ""
+        if resource_reports:
+            resource_block = (
+                "\n\n## TRUSTED RESOURCE REPORTS (pre-collected, AI-analyzed)\n"
+                "These are summaries from trusted source monitors collected before this run. "
+                "Only incorporate content that is directly relevant to the interest topic.\n"
+            )
+            for r in resource_reports:
+                resource_block += (
+                    f"\n### Source Monitor: {r['resource_name']} | Collected: {r['ran_at']}\n"
+                    f"{r['content']}\n---\n"
+                )
+
+        web_block = "\n\n## WEB SEARCH RESULTS\n"
+        for r in results:
+            web_block += f"\n**{r['title']}** ({r['url']})\n{r['snippet']}\n"
+
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        user_content = (
+            f"Report generated: {now_str}\n"
+            f"Interest topic: **{interest_name}**\n"
+            f"User instructions: {description}\n"
+            f"{resource_block}{web_block}\n\n"
+            "Using ONLY the material above (no training data), produce the report "
+            "the user requested. Begin with a 'Data Coverage' line showing the date range "
+            "of the results you are drawing from. Cite source + date on every claim. "
+            "If trusted resource content is included, attribute it to the source monitor name."
+        )
+
+        summary = await _ollama_chat(config.llm.ollama_base_url, config.llm.model, SYSTEM_PROMPT, user_content)
+        logger.info("AI summary generated for '%s' via Ollama (%d chars)", interest_name, len(summary))
+        return summary
+    except Exception as e:
+        logger.error("Ollama summarize failed: %s", e)
+        return _fallback_summary(interest_name, results, resource_reports)
+
+
 def _fallback_summary(interest_name: str, results: list[dict], resource_reports: list[dict]) -> str:
     lines = [f"# Report: {interest_name}\n"]
     if resource_reports:
@@ -112,11 +197,13 @@ def _fallback_summary(interest_name: str, results: list[dict], resource_reports:
 
 async def summarize_resource(resource_name: str, rendered_prompt: str, results: list[dict]) -> str:
     config = get_config()
-    if not config.llm.api_key:
+    if config.llm.provider != "ollama" and not config.llm.api_key:
         return _fallback_resource_summary(resource_name, results)
 
     if config.llm.provider == "anthropic":
         return await _anthropic_summarize_resource(resource_name, rendered_prompt, results, config)
+    if config.llm.provider == "ollama":
+        return await _ollama_summarize_resource(resource_name, rendered_prompt, results, config)
 
     return _fallback_resource_summary(resource_name, results)
 
@@ -163,6 +250,38 @@ async def _anthropic_summarize_resource(
         return _fallback_resource_summary(resource_name, results)
 
 
+async def _ollama_summarize_resource(
+    resource_name: str,
+    rendered_prompt: str,
+    results: list[dict],
+    config,
+) -> str:
+    try:
+        web_block = "\n\n## WEB SEARCH RESULTS\n"
+        for r in results:
+            web_block += f"\n**{r['title']}** ({r['url']})\n{r['snippet']}\n"
+
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        user_content = (
+            f"Report generated: {now_str}\n"
+            f"Source monitor: **{resource_name}**\n"
+            f"User query: {rendered_prompt}\n"
+            f"{web_block}\n\n"
+            "Using ONLY the search results above (no training data), answer the user query. "
+            "Begin with a 'Data Coverage' line showing the date range of the results. "
+            "Cite source URL and date on every claim. "
+            "If results are sparse, state that clearly rather than padding with background knowledge."
+        )
+
+        summary = await _ollama_chat(config.llm.ollama_base_url, config.llm.model, SYSTEM_PROMPT, user_content)
+        logger.info("Resource summary generated for '%s' via Ollama (%d chars)", resource_name, len(summary))
+        return summary
+    except Exception as e:
+        logger.error("Ollama resource summarize failed: %s", e)
+        return _fallback_resource_summary(resource_name, results)
+
+
 def _fallback_resource_summary(resource_name: str, results: list[dict]) -> str:
     lines = [f"# Resource Report: {resource_name}\n"]
     if results:
@@ -173,7 +292,7 @@ def _fallback_resource_summary(resource_name: str, results: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def test_connection(provider: str, api_key: str, model: str) -> dict:
+async def test_connection(provider: str, api_key: str, model: str, ollama_base_url: str = "") -> dict:
     if provider == "anthropic":
         try:
             import anthropic
@@ -184,6 +303,14 @@ async def test_connection(provider: str, api_key: str, model: str) -> dict:
                 messages=[{"role": "user", "content": "Reply with: OK"}],
             )
             return {"ok": True, "response": msg.content[0].text}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    if provider == "ollama":
+        try:
+            # Reasoning models (e.g. qwen3.5) spend tokens on hidden "thinking" before
+            # the visible reply, so a small budget can truncate before any content lands.
+            response = await _ollama_chat(ollama_base_url, model, "You are a connection test.", "Reply with: OK", max_tokens=200)
+            return {"ok": True, "response": response or "(connected — model returned no visible content)"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
     return {"ok": False, "error": f"Provider '{provider}' not supported"}

@@ -260,7 +260,7 @@
           <div id="llm-status"></div>
         </div>
 
-        <div class="alert alert-info" style="margin-bottom:16px">
+        <div class="alert alert-info" id="llm-provider-hint" style="margin-bottom:16px">
           <strong>Getting an Anthropic API key:</strong>
           Visit <strong>console.anthropic.com</strong> → Sign up / Log in → API Keys → Create Key.
           Copy the key and paste it below. Keep it secret — it is stored locally on this server only.
@@ -269,8 +269,9 @@
         <div class="form-row form-row-2">
           <div class="form-group">
             <label class="form-label">Provider</label>
-            <select id="llm-provider" class="form-control">
+            <select id="llm-provider" class="form-control" onchange="onLLMProviderChange()">
               <option value="anthropic">Anthropic (Claude)</option>
+              <option value="ollama">Ollama (local)</option>
             </select>
           </div>
           <div class="form-group">
@@ -282,13 +283,19 @@
             </select>
           </div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="llm-api-key-group">
           <label class="form-label">API Key</label>
           <input id="llm-api-key" type="password" class="form-control" placeholder="sk-ant-…">
-          <div class="form-hint">Your API key is stored in <code>data/config/settings.yaml</code> on this server.</div>
+          <div class="form-hint">Your API key is stored in <code>data/config/settings.yaml</code> on this server. Each provider's key is remembered independently.</div>
+        </div>
+        <div class="form-group hidden" id="llm-ollama-url-group">
+          <label class="form-label">Ollama Base URL</label>
+          <input id="llm-ollama-url" type="text" class="form-control" placeholder="http://localhost:11434" onchange="refreshOllamaModels()">
+          <div class="form-hint">Address of your locally running Ollama instance. No API key needed.</div>
         </div>
         <div style="display:flex;gap:10px;margin-top:4px">
           <button id="test-llm-btn" class="btn btn-success" onclick="testLLMConnection()">Test Connection</button>
+          <button id="refresh-ollama-models-btn" class="btn btn-ghost hidden" onclick="refreshOllamaModels()">Refresh Model List</button>
         </div>
       </div>
 

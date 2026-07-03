@@ -16,6 +16,10 @@ def read_settings():
     # Mask secrets in response
     if data["llm"]["api_key"]:
         data["llm"]["api_key"] = "***" + data["llm"]["api_key"][-4:]
+    data["llm"]["api_keys"] = {
+        provider: ("***" + key[-4:] if key else "")
+        for provider, key in data["llm"]["api_keys"].items()
+    }
     if data["email"]["smtp_password"]:
         data["email"]["smtp_password"] = "********"
     if data["sms"]["auth_token"]:
@@ -31,9 +35,23 @@ def read_settings():
 def update_settings(new_settings: AppSettings, _u=Depends(require_manager)):
     current = get_config()
     data = new_settings.model_dump()
-    # Preserve existing secrets if placeholder was sent
-    if data["llm"]["api_key"].startswith("***"):
-        data["llm"]["api_key"] = current.llm.api_key
+
+    # Resolve the incoming LLM key for the selected provider, preserving the stored
+    # key if the client sent back the masked placeholder unchanged.
+    provider = data["llm"]["provider"]
+    incoming_key = data["llm"]["api_key"]
+    stored_keys = dict(current.llm.api_keys)
+    # Migrate a legacy single-key config (pre-api_keys-dict) into the dict.
+    if current.llm.provider not in stored_keys and current.llm.api_key:
+        stored_keys[current.llm.provider] = current.llm.api_key
+    if incoming_key.startswith("***"):
+        resolved_key = stored_keys.get(provider, "")
+    else:
+        resolved_key = incoming_key
+    stored_keys[provider] = resolved_key
+    data["llm"]["api_key"] = resolved_key
+    data["llm"]["api_keys"] = stored_keys
+
     if data["email"]["smtp_password"] == "********":
         data["email"]["smtp_password"] = current.email.smtp_password
     if data["sms"]["auth_token"] == "********":
@@ -52,8 +70,15 @@ def update_settings(new_settings: AppSettings, _u=Depends(require_manager)):
 async def test_llm():
     from app.services.ai_service import test_connection
     cfg = get_config()
-    result = await test_connection(cfg.llm.provider, cfg.llm.api_key, cfg.llm.model)
+    result = await test_connection(cfg.llm.provider, cfg.llm.api_key, cfg.llm.model, cfg.llm.ollama_base_url)
     return result
+
+
+@router.get("/ollama-models")
+async def ollama_models(base_url: str = ""):
+    from app.services.ai_service import list_ollama_models
+    cfg = get_config()
+    return await list_ollama_models(base_url or cfg.llm.ollama_base_url)
 
 
 @router.post("/test-email")
