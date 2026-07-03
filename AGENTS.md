@@ -59,3 +59,34 @@ Single-page app: `templates/index.html` + `static/js/app.js`. All UI is JS-drive
 - Resource tag filtering in `get_recent_resource_reports()` not wired to per-interest tags.
 - No rate-limiting. No HTTPS termination (use reverse proxy in prod).
 - ThreatFox and OTX IOC sources disabled.
+
+## Code Philosophy
+
+Before writing code, stop at the first rung that holds:
+
+1. Does this need to exist at all? (YAGNI) → skip it, say so
+2. Stdlib does it? → use it
+3. Native platform feature covers it? → use it
+4. Already-installed dependency solves it? → use it
+5. Can it be one line? → one line
+6. Only then: the minimum code that works
+
+Rules:
+- No unrequested abstractions, no boilerplate "for later"
+- Deletion over addition. Boring over clever. Fewest files possible
+- Shortest working diff wins
+- Mark intentional simplifications: `# lucent: <ceiling>, <upgrade path>`
+- Non-trivial logic leaves ONE runnable check (assert/test). No frameworks unless asked
+- Never simplify away: trust-boundary validation, data-loss handling, security, accessibility
+
+Output: code first, then at most 3 short lines — what was skipped, when to add it.
+
+## Output Style
+
+Drop filler (just/really/basically), pleasantries (sure/certainly), hedging.
+Fragments OK. Short synonyms. Pattern: `[thing] [action] [reason]. [next step].`
+
+Full prose for: security warnings, irreversible action confirmations,
+ambiguous multi-step sequences, user confusion.
+
+Commits: conventional format, ≤50 char subject, imperative mood, why over what.
