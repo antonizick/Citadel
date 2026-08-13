@@ -1,6 +1,5 @@
 ## Screenshots
 
-<img src="screenshots/01-login.png">
 <img src="screenshots/02-dashboard.png">
 <img src="screenshots/03-interests.png">
 <img src="screenshots/04-ioc-ips.png">
